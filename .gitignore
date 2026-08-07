@@ -28,3 +28,28 @@ replay_pid*
 /.idea/
 
 .DS_Store
+
+# Maven wrapper
+!.mvn/wrapper/maven-wrapper.jar
+
+# NetBeans
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+# VS Code
+.vscode/
+
+# IntelliJ IDEA
+*.iml
+.idea/
+out/
+
+# Environment / credentials
+.env
+*.token
+
+# OS
+Thumbs.db

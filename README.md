@@ -1,5 +1,8 @@
 # AsteroidsFX
 
+> **Forked from** [sweat-tek/AsteroidsFX](https://github.com/sweat-tek/AsteroidsFX) — the original repository.  
+> **Author:** [Fard121](https://github.com/Fard121)
+
 A modular Asteroids game built with **JavaFX**, the **Java Platform Module System (JPMS)**, and a plugin-based architecture. Gameplay systems (player, enemies, bullets, asteroids, collision) are loaded at runtime as independent modules. Score persistence is handled by a separate **Spring Boot** microservice.
 
 ---
@@ -520,4 +523,14 @@ Coverage includes entity behavior, player state, asteroid sizes, collision detec
 
 ## License
 
-Educational / coursework project (SDU MMMI CBSE). Adjust this section if you publish under a specific open-source license.
+Educational / coursework project (SDU MMMI CBSE).  
+Original project by [sweat-tek](https://github.com/sweat-tek/AsteroidsFX).  
+This fork maintained by [Fard121](https://github.com/Fard121).
+
+---
+
+## Author
+
+| Name | GitHub | Email |
+|---|---|---|
+| Fard121 | [github.com/Fard121](https://github.com/Fard121) | fjama23@student.sdu.dk |
