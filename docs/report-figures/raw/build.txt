@@ -1,0 +1,45 @@
+[INFO] Copying Enemy-1.0.1-SNAPSHOT.jar to C:\Users\moval\Desktop\Game-Poject\full\AsteroidsFX-master\plugins\Enemy-1.0.1-SNAPSHOT.jar
+[INFO] ----------------------< dk.sdu.mmmi.cbse:Scoring >----------------------
+[INFO] Building Scoring 1.0.1-SNAPSHOT                                  [11/11]
+[INFO]   from Scoring\pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] --- clean:3.2.0:clean (default-clean) @ Scoring ---
+[INFO] Deleting C:\Users\moval\Desktop\Game-Poject\full\AsteroidsFX-master\Scoring\target
+[INFO] --- resources:3.4.0:resources (default-resources) @ Scoring ---
+[INFO] Copying 1 resource from src\main\resources to target\classes
+[INFO] --- compiler:3.10.1:compile (default-compile) @ Scoring ---
+[INFO] Changes detected - recompiling the module!
+[INFO] Compiling 2 source files to C:\Users\moval\Desktop\Game-Poject\full\AsteroidsFX-master\Scoring\target\classes
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ Scoring ---
+[INFO] skip non existing resourceDirectory C:\Users\moval\Desktop\Game-Poject\full\AsteroidsFX-master\Scoring\src\test\resources
+[INFO] --- compiler:3.10.1:testCompile (default-testCompile) @ Scoring ---
+[INFO] No sources to compile
+[INFO] --- surefire:3.2.5:test (default-test) @ Scoring ---
+[INFO] No tests to run.
+[INFO] --- jar:3.5.0:jar (default-jar) @ Scoring ---
+[INFO] Building jar: C:\Users\moval\Desktop\Game-Poject\full\AsteroidsFX-master\Scoring\target\Scoring-1.0.1-SNAPSHOT.jar
+[INFO] --- spring-boot:3.2.4:repackage (default) @ Scoring ---
+[INFO] Replacing main artifact C:\Users\moval\Desktop\Game-Poject\full\AsteroidsFX-master\Scoring\target\Scoring-1.0.1-SNAPSHOT.jar with repackaged archive, adding nested dependencies in BOOT-INF/.
+[INFO] The original artifact has been renamed to C:\Users\moval\Desktop\Game-Poject\full\AsteroidsFX-master\Scoring\target\Scoring-1.0.1-SNAPSHOT.jar.original
+[INFO] --- install:3.1.4:install (default-install) @ Scoring ---
+[INFO] Installing C:\Users\moval\Desktop\Game-Poject\full\AsteroidsFX-master\Scoring\pom.xml to C:\Users\moval\.m2\repository\dk\sdu\mmmi\cbse\Scoring\1.0.1-SNAPSHOT\Scoring-1.0.1-SNAPSHOT.pom
+[INFO] Installing C:\Users\moval\Desktop\Game-Poject\full\AsteroidsFX-master\Scoring\target\Scoring-1.0.1-SNAPSHOT.jar to C:\Users\moval\.m2\repository\dk\sdu\mmmi\cbse\Scoring\1.0.1-SNAPSHOT\Scoring-1.0.1-SNAPSHOT.jar
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Summary for AsteroidsFX 1.0.1-SNAPSHOT:
+[INFO] AsteroidsFX ........................................ SUCCESS [  1.766 s]
+[INFO] Common ............................................. SUCCESS [ 40.043 s]
+[INFO] CommonBullet ....................................... SUCCESS [  4.135 s]
+[INFO] CommonAsteroids .................................... SUCCESS [ 12.556 s]
+[INFO] Core ............................................... SUCCESS [ 13.408 s]
+[INFO] Player ............................................. SUCCESS [ 15.154 s]
+[INFO] Bullet ............................................. SUCCESS [  4.518 s]
+[INFO] Asteroids .......................................... SUCCESS [ 12.571 s]
+[INFO] Collision .......................................... SUCCESS [01:33 min]
+[INFO] Enemy .............................................. SUCCESS [ 13.134 s]
+[INFO] Scoring ............................................ SUCCESS [ 55.778 s]
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  04:28 min
+[INFO] Finished at: 2026-08-08T21:44:39+08:00
+[INFO] ------------------------------------------------------------------------
