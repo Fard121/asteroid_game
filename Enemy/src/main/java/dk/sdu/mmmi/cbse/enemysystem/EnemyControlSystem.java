@@ -103,7 +103,7 @@ public class EnemyControlSystem implements IEntityProcessingService {
         }
         if (world.getEntities(Bullet.class).size() < Bullet.MAX_BULLETS) {
             getBulletSPIs().stream().findFirst().ifPresent(
-                    spi -> world.addEntity(spi.createBullet(enemy, gameData))
+                    spi -> spi.createBullet(enemy, gameData).ifPresent(world::addEntity)
             );
         }
         shootCooldownFramesRemaining = SHOOT_COOLDOWN_FRAMES;

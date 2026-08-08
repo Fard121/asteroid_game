@@ -9,7 +9,21 @@ import dk.sdu.mmmi.cbse.common.data.World;
 import dk.sdu.mmmi.cbse.common.services.IEntityProcessingService;
 import dk.sdu.mmmi.cbse.common.sound.SoundManager;
 
+import java.util.Optional;
+
 public class BulletControlSystem implements IEntityProcessingService, BulletSPI {
+
+    // Shared across every instance (Player/Enemy each construct their own
+    // via a fresh ServiceLoader.load(BulletSPI.class) call per shot, rather
+    // than reusing Core's canonical IEntityProcessingService instance), so
+    // this needs to be static, not a per-instance field, for
+    // BulletPlugin.start()/stop() to actually gate createBullet() for all of
+    // them.
+    private static volatile boolean installed = true;
+
+    static void setInstalled(boolean value) {
+        installed = value;
+    }
 
     @Override
     public void process(GameData gameData, World world) {
@@ -35,7 +49,10 @@ public class BulletControlSystem implements IEntityProcessingService, BulletSPI 
     }
 
     @Override
-    public Entity createBullet(Entity shooter, GameData gameData) {
+    public Optional<Entity> createBullet(Entity shooter, GameData gameData) {
+        if (!installed) {
+            return Optional.empty();
+        }
         Entity bullet = new Bullet();
         bullet.setPolygonCoordinates(1, -1, 1, 1, -1, 1, -1, -1);
         double changeX = Math.cos(Math.toRadians(shooter.getRotation()));
@@ -48,6 +65,6 @@ public class BulletControlSystem implements IEntityProcessingService, BulletSPI 
                 ? EntityCategory.PLAYER_BULLET
                 : EntityCategory.ENEMY_BULLET);
         SoundManager.playShoot();
-        return bullet;
+        return Optional.of(bullet);
     }
 }

@@ -27,7 +27,8 @@ class HUDRenderer {
     private static final String[] PAUSE_MENU_OPTIONS = {"Resume", "Help", "Quit"};
 
     private static final String CONTROLS_HELP =
-            "Arrow keys - Move\nSPACE - Shoot\nP - Pause\nM - Mute\nR - Restart (after Game Over/Victory)";
+            "Arrow keys - Move\nSPACE - Shoot\nP - Pause\nM - Mute\nR - Restart (after Game Over/Victory)"
+            + "\n1 - Install/uninstall Player\n2 - Install/uninstall Enemy\n3 - Install/uninstall Weapon";
 
     private static final Font MENU_FONT = Font.font("Arial", FontWeight.BOLD, 28);
     private static final Color MENU_COLOR = Color.WHITE;

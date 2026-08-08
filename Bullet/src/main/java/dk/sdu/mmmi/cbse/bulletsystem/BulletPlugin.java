@@ -12,11 +12,12 @@ public class BulletPlugin implements IGamePluginService {
 
     @Override
     public void start(GameData gameData, World world) {
-
+        BulletControlSystem.setInstalled(true);
     }
 
     @Override
     public void stop(GameData gameData, World world) {
+        BulletControlSystem.setInstalled(false);
         for (Entity e : world.getEntities()) {
             if (e.getClass() == Bullet.class) {
                 world.removeEntity(e);

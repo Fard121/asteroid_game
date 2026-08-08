@@ -60,17 +60,15 @@ class Game {
     private int menuSelectedIndex = 0;
     private Polygon flamePolygon;
     private final Random random = new Random();
-    private final List<IGamePluginService> gamePluginServices;
-    private final List<IEntityProcessingService> entityProcessingServiceList;
     private final List<IPostEntityProcessingService> postEntityProcessingServices;
     private final ScoreClient scoreClient;
+    private final ComponentRegistry componentRegistry;
     private int lastPushedScore = -1;
 
     Game(List<IGamePluginService> gamePluginServices, List<IEntityProcessingService> entityProcessingServiceList, List<IPostEntityProcessingService> postEntityProcessingServices, ScoreClient scoreClient) {
-        this.gamePluginServices = gamePluginServices;
-        this.entityProcessingServiceList = entityProcessingServiceList;
         this.postEntityProcessingServices = postEntityProcessingServices;
         this.scoreClient = scoreClient;
+        this.componentRegistry = new ComponentRegistry(gamePluginServices, entityProcessingServiceList);
     }
 
     public void start(Stage window) throws Exception {
@@ -140,6 +138,15 @@ class Game {
             if (event.getCode().equals(KeyCode.Q)) {
                 gameData.getKeys().setKey(GameKeys.QUIT, true);
             }
+            if (event.getCode().equals(KeyCode.DIGIT1)) {
+                gameData.getKeys().setKey(GameKeys.TOGGLE_PLAYER, true);
+            }
+            if (event.getCode().equals(KeyCode.DIGIT2)) {
+                gameData.getKeys().setKey(GameKeys.TOGGLE_ENEMY, true);
+            }
+            if (event.getCode().equals(KeyCode.DIGIT3)) {
+                gameData.getKeys().setKey(GameKeys.TOGGLE_WEAPON, true);
+            }
         });
         scene.setOnKeyReleased(event -> {
             if (event.getCode().equals(KeyCode.LEFT)) {
@@ -172,6 +179,15 @@ class Game {
             if (event.getCode().equals(KeyCode.Q)) {
                 gameData.getKeys().setKey(GameKeys.QUIT, false);
             }
+            if (event.getCode().equals(KeyCode.DIGIT1)) {
+                gameData.getKeys().setKey(GameKeys.TOGGLE_PLAYER, false);
+            }
+            if (event.getCode().equals(KeyCode.DIGIT2)) {
+                gameData.getKeys().setKey(GameKeys.TOGGLE_ENEMY, false);
+            }
+            if (event.getCode().equals(KeyCode.DIGIT3)) {
+                gameData.getKeys().setKey(GameKeys.TOGGLE_WEAPON, false);
+            }
 
         });
 
@@ -197,6 +213,16 @@ class Game {
 
                 if (gameData.getKeys().isPressed(GameKeys.MUTE)) {
                     SoundManager.toggleMute();
+                }
+
+                if (gameData.getKeys().isPressed(GameKeys.TOGGLE_PLAYER)) {
+                    componentRegistry.toggle("Player", gameData, world);
+                }
+                if (gameData.getKeys().isPressed(GameKeys.TOGGLE_ENEMY)) {
+                    componentRegistry.toggle("Enemy", gameData, world);
+                }
+                if (gameData.getKeys().isPressed(GameKeys.TOGGLE_WEAPON)) {
+                    componentRegistry.toggle("Weapon", gameData, world);
                 }
 
                 GameStateManager stateManager = gameData.getGameStateManager();
@@ -506,11 +532,11 @@ class Game {
     }
 
     public List<IGamePluginService> getGamePluginServices() {
-        return gamePluginServices;
+        return componentRegistry.getActivePlugins();
     }
 
     public List<IEntityProcessingService> getEntityProcessingServices() {
-        return entityProcessingServiceList;
+        return componentRegistry.getActiveProcessors();
     }
 
     public List<IPostEntityProcessingService> getPostEntityProcessingServices() {

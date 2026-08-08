@@ -91,7 +91,7 @@ public class PlayerControlSystem implements IEntityProcessingService {
             if (gameData.getKeys().isDown(GameKeys.SPACE) && shootCooldownFramesRemaining <= 0
                     && world.getEntities(Bullet.class).size() < Bullet.MAX_BULLETS) {
                 getBulletSPIs().stream().findFirst().ifPresent(
-                        spi -> {world.addEntity(spi.createBullet(player, gameData));}
+                        spi -> spi.createBullet(player, gameData).ifPresent(world::addEntity)
                 );
                 shootCooldownFramesRemaining = SHOOT_COOLDOWN_FRAMES;
             }
