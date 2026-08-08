@@ -5,12 +5,18 @@
 **Repository:** https://github.com/Fard121/asteroid_game
 **Forked from:** https://github.com/sweat-tek/AsteroidsFX
 **Course:** SDU MMMI — Component-Based Software Engineering
-**Report date:** 2026-08-07
+**Report date:** 2026-08-08
 
 > **Scope of this report.** Every one of the nine labs in `instructionlabs/labs.pdf` is checked
 > requirement by requirement against the actual source code in this repository. For each lab the
 > report states what the lab asked for, what was implemented, **how the implementation works**, and
-> which file proves it. No source code was modified while producing this report — it is analysis only.
+> which file proves it.
+>
+> **Verification, 2026-08-08.** The audit was re-run against the labs PDF and the live code. It found
+> one genuine functional gap (GameLab: enemy ships were not destroyed by asteroid collisions) and
+> three stale documentation claims. All four were fixed; see
+> [section 13](#13-gaps-and-recommendations) for the record. Evidence for every "✅" below was
+> re-confirmed by a clean `mvn clean install` — **BUILD SUCCESS, 21 of 21 tests passing.**
 
 ---
 
@@ -48,8 +54,9 @@
 | 8 | **MicroServiceLab** | Spring Boot scoring service integrated via `RestTemplate` | ✅ Fulfilled |
 | 9 | **TestLab** | JUnit 5 unit tests, Mockito where stubbing is needed | ✅ Fulfilled |
 
-**Result: 9 of 9 labs fulfilled.** Two minor documentation gaps are recorded in
-[section 13](#13-gaps-and-recommendations); neither affects functionality.
+**Result: 9 of 9 labs fulfilled.** The gaps found during this audit — one functional, three
+documentation — have been closed and are recorded in
+[section 13](#13-gaps-and-recommendations). Nothing is left outstanding.
 
 **The through-line.** Each lab replaced a direct dependency with a discovered one. The end state is a
 `Core` module whose `module-info.java` contains no `requires` for any gameplay module — it knows only
@@ -75,7 +82,7 @@ Ten Maven modules, declared in the root `pom.xml`:
 | `Scoring` | Microservice | Standalone Spring Boot REST API on port 8081 |
 
 **Counts:** 10 Maven modules · 9 `module-info.java` files (all but `Scoring`, which is a classpath
-Spring Boot app) · 5 test classes · 20 test methods · 2 runtime processes.
+Spring Boot app) · 5 test classes · 21 test methods · 2 runtime processes.
 
 ---
 
@@ -200,11 +207,11 @@ module — only the `BulletSPI` interface from `CommonBullet`.
 | 6 | Randomly moving Asteroids | ✅ | `Asteroids/.../AsteroidProcessor.java` |
 | 7 | Pythagorean collision detection | ✅ | `CollisionDetector.collides()` |
 | 8 | Collision is a post-processor | ✅ | `Collision` provides `IPostEntityProcessingService` |
-| 9 | Ships destroyed by asteroids | ✅ | `VALID_COLLISIONS` includes `PLAYER`↔`ASTEROID`, `PLAYER`↔`ENEMY` |
+| 9 | Ships destroyed by asteroids | ✅ | `VALID_COLLISIONS` includes `PLAYER`↔`ASTEROID`, `PLAYER`↔`ENEMY` and `ENEMY`↔`ASTEROID` — see 5.3 |
 | 10 | Asteroids split into two | ✅ | `AsteroidSplitterImpl.createSplitAsteroid()` — `for (i = 0; i < 2; i++)` |
 | 11 | Small asteroids destroyed, not split | ✅ | `AsteroidSize.smaller()` returns `null` for `SMALL` |
 | 12 | Destroyed after **a number of** hits | ✅ | `Entity.maxHealth`; enemy set to 3 in `EnemyControlSystem` |
-| 13 | Identify missing components | ⚠️ Partial | Covered under "Known gaps" in `docs/ARCHITECTURE.md`, but not a dedicated section |
+| 13 | Identify missing components | ✅ | Dedicated `## Missing components / gaps identified` section in `docs/ARCHITECTURE.md` |
 | 14 | Operation contracts specified | ✅ | All three interfaces carry explicit PRE/POST clauses |
 
 ### 5.3 How it works
@@ -250,6 +257,25 @@ runs, so asteroid-vs-asteroid and friendly fire are ignored:
 | `ENEMY_BULLET` ↔ `PLAYER` | Saucer shoots the player |
 | `PLAYER` ↔ `ASTEROID` | Player rams a rock |
 | `PLAYER` ↔ `ENEMY` | Player rams the saucer |
+| `ENEMY` ↔ `ASTEROID` | Saucer flies into a rock |
+
+> **Gap found and fixed during the 2026-08-08 audit.** The last row did not exist. The lab's wording
+> is *"Ships that collide with asteroids should be destroyed"* — plural, and the enemy saucer is a
+> ship. Previously an enemy could fly straight through a rock untouched. `ENEMY` ↔ `ASTEROID` was
+> added to `VALID_COLLISIONS` with its own branch in `process()`: the saucer is destroyed outright
+> (`enemy.damage(enemy.getHealth())`, not one point — a rock is not a bullet), the asteroid takes
+> its normal one point of damage and splits as usual, and **no score is credited**, because the
+> player did not make that kill. Covered by the new test
+> `enemyShipIsDestroyedByAnAsteroidWithoutScoringForThePlayer`.
+
+**Three destruction paths, deliberately different.** `process()` branches once a valid, overlapping
+pair is found:
+
+| Branch | Trigger | Outcome | Scores? |
+|---|---|---|---|
+| Player | either side is `PLAYER` | Player is never removed — `registerHit()` costs a life; the thing that hit it is damaged | No — a life was already paid |
+| Ship vs rock | `ENEMY` ↔ `ASTEROID` | Saucer destroyed outright; asteroid splits | No — not the player's kill |
+| Bullet | everything else | Both sides damaged; whoever runs out of health is removed | Yes |
 
 **Multi-hit destruction.** `damage(Entity)` applies one point of damage and reports whether the
 entity is now destroyed. Entities that never call `setMaxHealth()` default to 1, so bullets and
@@ -274,8 +300,11 @@ the IntroLab brief describes.
 
 ### 5.4 Verdict
 
-> **✅ FULFILLED** (13 of 14 fully; requirement 13, "identify missing components", is covered inside
-> `docs/ARCHITECTURE.md` rather than as a dedicated deliverable — see [section 13](#13-gaps-and-recommendations)).
+> **✅ FULLY FULFILLED — 14 of 14.** Requirement 9 ("ships destroyed by asteroids") was only partially
+> met before this audit and is now complete for both ship types; requirement 13 ("identify missing
+> components") has its own `## Missing components / gaps identified` section in
+> `docs/ARCHITECTURE.md`. Every operation contract is stated as explicit PRE/POST JavaDoc on the
+> interface itself.
 
 ---
 
@@ -682,13 +711,13 @@ never corrupt a run.
 > recommended · **Write a unit test for one of the components. For example, write a test for moving
 > the player ship or a test for collision detection.**
 
-The lab asks for **one** test. Five test classes containing **20 test methods** were written.
+The lab asks for **one** test. Five test classes containing **21 test methods** were written.
 
 ### 12.2 Test inventory
 
 | Test class | Module | Framework | Methods |
 |---|---|---|---|
-| `CollisionDetectorTest` | `Collision` | JUnit 5 + Mockito | 5 |
+| `CollisionDetectorTest` | `Collision` | JUnit 5 + Mockito | 6 |
 | `PlayerControlSystemTest` | `Player` | JUnit 5 + Mockito | 3 |
 | `PlayerStateTest` | `Common` | JUnit 5 | 5 |
 | `EntityTest` | `Common` | JUnit 5 | 4 |
@@ -697,13 +726,14 @@ The lab asks for **one** test. Five test classes containing **20 test methods** 
 **Both examples the lab names are covered** — collision detection *and* moving the player ship.
 
 <details>
-<summary><strong>All 20 test method names</strong></summary>
+<summary><strong>All 21 test method names</strong></summary>
 
 **`CollisionDetectorTest`**
 - `collidesWhenDistanceIsLessThanCombinedRadii`
 - `doesNotCollideWhenFarApart`
 - `usesPythagoreanDistanceOnBothAxes`
 - `enemyIsDestroyedOnlyAfterThreeBulletHits`
+- `enemyShipIsDestroyedByAnAsteroidWithoutScoringForThePlayer`
 - `bothSinglesHitEntitiesAreRemovedFromTheWorld`
 
 **`PlayerControlSystemTest`**
@@ -788,7 +818,7 @@ mvn test
 
 ### 12.4 Verdict
 
-> **✅ FULLY FULFILLED — substantially exceeded.** The lab asked for one test; the project has 20
+> **✅ FULLY FULFILLED — substantially exceeded.** The lab asked for one test; the project has 21
 > across 5 classes, covering both examples the lab names and both testing styles the reading
 > material describes.
 
@@ -796,27 +826,59 @@ mvn test
 
 ## 13. Gaps and recommendations
 
-Neither item below affects functionality or blocks any lab from being marked complete.
+### 13.1 Findings from the 2026-08-08 audit — all closed
 
-| # | Item | Lab | Severity | Recommendation |
+Every item below was found by re-reading `instructionlabs/labs.pdf` against the live code, then
+fixed. The build was re-run clean afterwards: **BUILD SUCCESS, 21/21 tests passing.**
+
+| # | Finding | Lab | Severity | What was done |
 |---|---|---|---|---|
-| 1 | *"Identify missing components"* has no dedicated deliverable | GameLab | ⚠️ Minor | The material exists under "Known gaps" in `docs/ARCHITECTURE.md`. Promote it to its own `## Missing components` heading so an examiner can find it without hunting. |
-| 2 | Java version stated inconsistently in `README.md` | — | ⚠️ Minor | Tech Stack says *"Java 11+"*, Prerequisites says *"JDK 17+"*. **JDK 17+ is correct** for JavaFX 21 and Spring 6. Change the Tech Stack line to match. |
+| 1 | **Enemy ships were not destroyed by asteroids.** `VALID_COLLISIONS` had no `ENEMY`↔`ASTEROID` pair, so the saucer flew through rocks untouched — but GameLab says *"Ships that collide with asteroids should be destroyed"* | GameLab | 🔴 Functional | Added the pair plus a dedicated branch in `CollisionDetector.process()`: saucer destroyed outright, asteroid splits normally, no score credited. New test `enemyShipIsDestroyedByAnAsteroidWithoutScoringForThePlayer` |
+| 2 | **`IGamePluginService.stop()` documented as never called.** Its JavaDoc, and `docs/ARCHITECTURE.md` in two places, still said nothing invokes it — untrue since `ComponentRegistry` was added | — | 🟡 Stale doc | Corrected all three: `stop()` is called on runtime uninstall (keys `1`/`2`/`3`) and paired with `start()` on reinstall |
+| 3 | **Contradictory comment on scoring.** `awardScoreForDestroyed`'s comment claimed ramming kills *do* score, while the branch above it said they don't. The code was right; the comment was wrong | — | 🟡 Stale doc | Comment rewritten to state the actual rule: score is credited only for kills the player shot |
+| 4 | **README inconsistencies.** Tech Stack said *"Java 11+"* while Prerequisites said *"JDK 17+"*; the run command omitted `--non-recursive`; the `1`/`2`/`3` component-toggle keys were undocumented | IntroLab | 🟡 Doc | README standardised on **JDK 17+**, corrected to `mvn exec:exec --non-recursive`, and the toggle keys plus full step-by-step run/verify/troubleshoot instructions were added |
 
-**Optional polish, not required by any lab:**
+### 13.2 Deliberate design decisions — not gaps
 
-- `IGamePluginService.stop()` is implemented by every plugin but never invoked by `Game` — there is no
-  shutdown or full-restart path that calls it. This is already noted in the interface's own JavaDoc,
-  so it is a documented decision rather than an oversight.
+Two things an examiner might flag on a quick read are intentional, and worth defending rather than
+"fixing":
+
+- **Plugin modules declare no `exports`.** JPMSLab 1 says *"declare imports and exports in
+  `module-info.java` files for each module"*. `Player`, `Enemy`, `Bullet`, `Asteroids` and
+  `Collision` declare `requires` and `provides` but export nothing — on purpose. Their classes are
+  reached only through service interfaces; exporting them would hand other modules a compile-time
+  path into plugin internals and undo exactly the encapsulation the lab is teaching. The modules
+  that legitimately have an API to publish (`Common`, `CommonBullet`, `CommonAsteroids`, `Core`) all
+  export it.
+- **`Core` declares no `uses`.** The `uses` clauses sit in `Common/module-info.java` because
+  `Common`'s `ServiceLocator` is the class that actually calls `ServiceLoader.load`. The result is
+  the strongest possible reading of the brief: `Core/module-info.java` names no gameplay module and
+  no gameplay service at all.
+
+### 13.3 Genuinely out of scope
+
+Not required by any of the nine labs, and left undone on purpose:
+
+- **No hot *reload* of new plugin jars.** Components can be installed/uninstalled at runtime, but
+  `ServiceLocator` builds its `ModuleLayer` once at startup, so a jar dropped into `plugins/`
+  mid-session needs a restart.
+- **No persistent high score.** The Scoring microservice holds the score in an `AtomicInteger`;
+  MicroServiceLab asks for the service, not for a database behind it.
+- **No dedicated wave/spawner component.** Spawn timing lives in `EnemyControlSystem` and
+  `AsteroidProcessor`. Documented as a known gap in `docs/ARCHITECTURE.md`, which is what GameLab's
+  "identify missing components" asks for.
 
 ---
 
 ## 14. How to build and run
 
-**Prerequisites:** JDK 17+ and Maven 3.8+ (or the bundled `./mvnw` / `mvnw.cmd`).
+**Prerequisites:** JDK 17+ and Maven 3.8+ (or the bundled `./mvnw` / `mvnw.cmd`). Run everything
+**from the repository root** — `ServiceLocator` resolves `plugins/` relative to the working
+directory.
 
-**Step 1 — build every module.** Compiles, runs the tests, and copies the jars into `mods-mvn/`
-(boot layer) and `plugins/` (child layer). Both directories must exist before launch.
+**Step 1 — build every module.** Compiles, runs the 21 tests, and copies the jars into `mods-mvn/`
+(boot layer) and `plugins/` (child layer). Both must be populated before launch, which is why this
+is `install` and not `package`.
 
 ```bash
 mvn clean install
@@ -834,6 +896,19 @@ java -jar Scoring/target/Scoring-1.0.1-SNAPSHOT.jar
 mvn exec:exec --non-recursive
 ```
 
+`--non-recursive` runs the `exec` plugin once for the root project only; without it Maven repeats
+the launch for every child module. The underlying command is
+`java --module-path=mods-mvn --module=Core/dk.sdu.mmmi.cbse.main.Main`.
+
+**Step 4 — verify the full stack.** Shoot an asteroid, then from another terminal:
+
+```bash
+curl http://localhost:8081/api/score
+```
+
+The value should match the HUD score — proving the plugin layer, the game loop and the microservice
+are all connected.
+
 **Controls**
 
 | Key | Action |
@@ -846,6 +921,7 @@ mvn exec:exec --non-recursive
 | `H` | Help overlay |
 | `R` | Restart (game over / victory) |
 | `Q` | Quit (menus) |
+| `1` / `2` / `3` | Install / uninstall the Player, Enemy and Weapon components at runtime |
 
 Three lives, brief invulnerability on respawn; clear **wave 3** to win.
 
@@ -880,7 +956,10 @@ and the architecture reflects the intent of the course rather than merely satisf
 discovered at runtime from `plugins/` and resolved into their own `ModuleLayer`, Spring wires whatever
 was found, and the score is mirrored to a genuinely separate process.
 
-The two items in [section 13](#13-gaps-and-recommendations) are documentation-only and can each be
-fixed in a few minutes.
+The 2026-08-08 audit closed the last outstanding item: one functional gap in GameLab's collision
+rules and three stale documentation claims, all listed with their fixes in
+[section 13](#13-gaps-and-recommendations). Nothing remains open.
 
-*No source code was modified in producing this report.*
+*Verified 2026-08-08 with a clean `mvn clean install`: BUILD SUCCESS, 21 of 21 tests passing.
+Source changes made as part of this audit are limited to the four fixes listed in section 13 — the
+module structure, the service contracts and the plugin architecture are unchanged.*

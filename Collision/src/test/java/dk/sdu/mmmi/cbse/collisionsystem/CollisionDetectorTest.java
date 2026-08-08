@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -85,6 +86,24 @@ class CollisionDetectorTest {
         detector.process(gameData, world);
 
         assertFalse(world.getEntities().contains(enemy), "enemy should be destroyed on the 3rd hit");
+    }
+
+    // GameLab: "Ships that collide with asteroids should be destroyed" -
+    // the enemy saucer is a ship too, and a rock is not a player kill.
+    @Test
+    void enemyShipIsDestroyedByAnAsteroidWithoutScoringForThePlayer() {
+        GameData gameData = new GameData();
+        World world = new World();
+
+        Entity enemy = entityAt(100, 100, 8, EntityCategory.ENEMY);
+        enemy.setMaxHealth(3); // survives 3 bullets, but not one asteroid
+        world.addEntity(enemy);
+        world.addEntity(entityAt(100, 100, 14, EntityCategory.ASTEROID));
+
+        detector.process(gameData, world);
+
+        assertFalse(world.getEntities().contains(enemy), "enemy should be destroyed by the asteroid");
+        assertEquals(0, gameData.getScoreState().getScore(), "a rock kill is not the player's kill");
     }
 
     // --- process(): interaction-based test with a mocked World ---

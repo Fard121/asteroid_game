@@ -36,9 +36,9 @@ public interface IGamePluginService {
 
     /**
      * Called when the plugin's entities/resources should be released -
-     * currently unused by Core's game loop (no game-over/restart path calls
-     * it yet) but part of the contract every plugin must honor so a future
-     * caller can rely on it.
+     * invoked by Core's {@code ComponentRegistry} when the player
+     * uninstalls that plugin's component at runtime (keys 1/2/3), and
+     * paired with a later {@link #start} if the component is reinstalled.
      *
      * <p>Precondition: {@link #start} was previously called on this same
      * instance with the same {@code gameData}/{@code world}.

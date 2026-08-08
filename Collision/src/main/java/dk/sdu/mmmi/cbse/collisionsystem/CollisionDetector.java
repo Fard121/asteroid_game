@@ -29,7 +29,10 @@ public class CollisionDetector implements IPostEntityProcessingService {
         {EntityCategory.PLAYER_BULLET, EntityCategory.ENEMY},
         {EntityCategory.ENEMY_BULLET, EntityCategory.PLAYER},
         {EntityCategory.PLAYER, EntityCategory.ASTEROID},
-        {EntityCategory.PLAYER, EntityCategory.ENEMY}
+        {EntityCategory.PLAYER, EntityCategory.ENEMY},
+        // GameLab: "Ships that collide with asteroids should be destroyed" -
+        // that applies to the enemy saucer too, not just the player ship.
+        {EntityCategory.ENEMY, EntityCategory.ASTEROID}
     };
 
     private static final int POINTS_LARGE_ASTEROID = 20;
@@ -77,6 +80,21 @@ public class CollisionDetector implements IPostEntityProcessingService {
                         toRemove.add(other);
                         splitIfAsteroid(other, world);
                     }
+                } else if (isEnemyAsteroidPair(entity1, entity2)) {
+                    // A ship that flies into a rock is destroyed outright -
+                    // no bullet was involved, so nothing here is credited to
+                    // the player's score. The asteroid still breaks up the
+                    // same way it would if it had been shot.
+                    Entity enemy = entity1.getCategory() == EntityCategory.ENEMY ? entity1 : entity2;
+                    Entity asteroid = (enemy == entity1) ? entity2 : entity1;
+
+                    enemy.damage(enemy.getHealth());
+                    toRemove.add(enemy);
+
+                    if (damage(asteroid)) {
+                        toRemove.add(asteroid);
+                        splitIfAsteroid(asteroid, world);
+                    }
                 } else {
                     // Both sides take a hit - e.g. a bullet always has 1 max
                     // health so it is always consumed, while its target
@@ -104,10 +122,17 @@ public class CollisionDetector implements IPostEntityProcessingService {
         }
     }
 
-    // Called once an entity's hit points have actually run out. Bullets and
-    // the player itself never score (their categories fall through both
-    // ifs); ramming kills via the player branch DO still score here, same
-    // as bullet kills - only the redundant per-hit life cost differs.
+    private boolean isEnemyAsteroidPair(Entity entity1, Entity entity2) {
+        return (entity1.getCategory() == EntityCategory.ENEMY && entity2.getCategory() == EntityCategory.ASTEROID)
+                || (entity1.getCategory() == EntityCategory.ASTEROID && entity2.getCategory() == EntityCategory.ENEMY);
+    }
+
+    // Called once an entity's hit points have actually run out, and only
+    // from the bullet branch below - so score is awarded exactly for kills
+    // the player shot. Ramming kills (player branch) and ship-vs-rock
+    // wrecks (enemy/asteroid branch) deliberately never reach this method:
+    // the first already costs the player a life, and the second wasn't the
+    // player's doing at all.
     private void awardScoreForDestroyed(Entity destroyed, ScoreState scoreState) {
         if (destroyed.getCategory() == EntityCategory.ASTEROID) {
             scoreState.addPoints(pointsForAsteroid(destroyed));

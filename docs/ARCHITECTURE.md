@@ -23,17 +23,32 @@ the interface itself (`Common/.../services/*.java`,
 | CommonBullet | `BulletSPI` interface + `Bullet` marker type | — |
 | CommonAsteroids | `IAsteroidSplitter` interface + `Asteroid`/`AsteroidSize` types | — |
 
-`Common`, `CommonBullet`, and `CommonAsteroids` are pure API/data modules with
-no `provides`/`uses` of their own — every other module `requires` one or more
-of them to compile against the shared interfaces and data types.
+`CommonBullet` and `CommonAsteroids` are pure API/data modules — every other
+module `requires` one or more of them to compile against the shared
+interfaces and data types.
+
+Two details the table above compresses:
+
+- **Core consumes the three services but does not declare `uses` itself.**
+  The `uses` clauses live in `Common/module-info.java`, because `Common`'s
+  `ServiceLocator` is the class that actually calls `ServiceLoader.load`
+  on Core's behalf. `Core/module-info.java` therefore names no gameplay
+  module and no service — which is exactly the decoupling the labs are
+  after.
+- **`BulletSPI` and `IAsteroidSplitter` are looked up by their consumers.**
+  `Common` cannot declare `uses` for those without requiring
+  `CommonBullet`/`CommonAsteroids` (which already require `Common` — a
+  cycle), so Player, Enemy and Collision declare `uses` in their own
+  `module-info.java` and call
+  `ServiceLoader.load(ServiceLocator.INSTANCE.getLayer(), ...)` directly.
 
 ## Operation contracts (summary)
 
 - **`IGamePluginService.start`** — called once per plugin, before the game
   loop starts; adds the plugin's initial entities to `World`.
-- **`IGamePluginService.stop`** — removes the plugin's entities; part of the
-  contract but not currently called anywhere (no explicit "unload a plugin"
-  path exists yet in `Game`).
+- **`IGamePluginService.stop`** — removes the plugin's entities; called by
+  Core's `ComponentRegistry` when a component is uninstalled at runtime
+  (keys `1`/`2`/`3`), and followed by a fresh `start` if it is reinstalled.
 - **`IEntityProcessingService.process`** — called once per frame, before any
   `IPostEntityProcessingService`; advances one component's own entities and
   must not assume other components have already run this frame.
@@ -56,9 +71,11 @@ of them to compile against the shared interfaces and data types.
 - **No persistent high-score storage.** `ScoreState` (Common) is in-memory
   only and resets on restart; there is no component responsible for
   persisting a high score across runs.
-- **No explicit `stop()` caller.** Every plugin implements
-  `IGamePluginService.stop`, but nothing in `Game` invokes it — a "return to
-  main menu and reload plugins" feature would need this wired up.
+- **No full plugin *reload* path.** `IGamePluginService.stop` is now called
+  by `ComponentRegistry` (runtime install/uninstall of Player, Enemy and
+  Weapon), but that only toggles instances already discovered at startup —
+  dropping a new jar into `plugins/` mid-run still requires a restart,
+  because `ServiceLocator` builds its `ModuleLayer` once.
 - **Scoring was not a separate deployable component** until the Microservices
   Lab work — it lived entirely in-process inside `Common`/`Collision`. See
   `Scoring/` module and `ScoreClient` in Core for the extracted version.
