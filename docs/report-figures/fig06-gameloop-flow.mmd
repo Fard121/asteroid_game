@@ -1,0 +1,46 @@
+flowchart LR
+    F(["AnimationTimer<br/>.handle&#40;&#41;"])
+
+    subgraph IN["1 &middot; INPUT"]
+        direction TB
+        I1["Mute key M"]
+        I2["Component toggles 1/2/3<br/>ComponentRegistry.toggle"]
+        I3["handleStateTransitions<br/>menu, pause, quit"]
+        I1 --> I2 --> I3
+    end
+
+    Q{"START_MENU<br/>or PAUSED?"}
+
+    subgraph UPD["2 &middot; SIMULATION"]
+        direction TB
+        U1["<b>IEntityProcessingService.process</b><br/>PlayerControlSystem<br/>EnemyControlSystem<br/>BulletControlSystem<br/>AsteroidProcessor<br/><i>no guaranteed order</i>"]
+        U2["<b>IPostEntityProcessingService.process</b><br/>CollisionDetector: pair scan,<br/>damage, split, award score<br/><i>positions now final</i>"]
+        U3{"lives == 0 &rarr; GAME_OVER<br/>wave &ge; 3 &rarr; VICTORY"}
+        U1 --> U2 --> U3
+    end
+
+    subgraph REN["3 &middot; RENDER"]
+        direction TB
+        R1["draw&#40;&#41;: polygons, explosions,<br/>health bars, thruster flame"]
+        R2["HUDRenderer.update<br/>score, lives, wave, menus"]
+        R3["shakeScreen on damage"]
+        R1 --> R2 --> R3
+    end
+
+    subgraph FIN["4 &middot; COMMIT"]
+        direction TB
+        C1["keys.update&#40;&#41;<br/>latch previous key state"]
+        C2["<b>pushScoreIfChanged&#40;&#41;</b><br/><i>deliberately last: an unreachable<br/>microservice cannot block<br/>rendering or input</i>"]
+        C1 --> C2
+    end
+
+    F --> IN
+    IN --> Q
+    Q -->|no| UPD
+    Q -->|yes| REN
+    UPD --> REN
+    REN --> FIN
+    FIN --> N(["Next frame"])
+
+    classDef term fill:#e8eefc,stroke:#3355aa
+    class F,N term

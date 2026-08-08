@@ -1,0 +1,32 @@
+sequenceDiagram
+    autonumber
+    participant G as Core::Game
+    participant SS as Common::ScoreState
+    participant SC as Core::ScoreClient
+    participant RT as Spring RestTemplate
+    participant API as Scoring::ScoreController<br/>JVM 2, port 8081
+
+    G->>G: pushScoreIfChanged() -- last statement of the frame
+    G->>SS: getScore()
+    SS-->>G: current score
+    alt score unchanged
+        Note over G: Return immediately -- no HTTP at 60 fps
+    else score changed
+        alt previously unreachable and backoff not expired
+            G->>G: decrement retry counter, return
+        else attempt the call
+            G->>SC: push(currentScore)
+            SC->>RT: postForObject(/api/score, {score}, ScoreResponse)
+            alt service reachable
+                RT->>API: HTTP POST {"score": N}
+                API->>API: AtomicInteger.set(N)
+                API-->>RT: 200 {"score": N}
+                RT-->>SC: ScoreResponse
+                SC-->>G: ok, lastPushedScore := N
+            else RestClientException
+                RT--xSC: connection refused
+                SC--xG: exception propagates
+                G->>G: log once, back off ~180 frames (3 s)
+            end
+        end
+    end

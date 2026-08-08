@@ -1,0 +1,31 @@
+flowchart LR
+    PLAYER(("Player<br/>&#40;human&#41;"))
+    ADMIN(("Integrator /<br/>Assessor"))
+
+    subgraph SYS["AsteroidsFX system boundary"]
+        U1(["UC1 Start a game session"])
+        U2(["UC2 Navigate and rotate the ship"])
+        U3(["UC3 Fire a weapon"])
+        U4(["UC4 Destroy an asteroid<br/>and split it"])
+        U5(["UC5 Engage the enemy saucer"])
+        U6(["UC6 Lose a life / respawn"])
+        U7(["UC7 Clear a wave, reach victory"])
+        U8(["UC8 Pause, mute, view help"])
+        U9(["UC9 Install / uninstall a<br/>component at runtime"])
+        U10(["UC10 Publish the score<br/>to the scoring service"])
+    end
+
+    PLAYER --> U1
+    PLAYER --> U2
+    PLAYER --> U3
+    PLAYER --> U6
+    PLAYER --> U8
+    ADMIN --> U9
+    U3 -.->|&laquo;include&raquo;| U4
+    U3 -.->|&laquo;include&raquo;| U5
+    U4 -.->|&laquo;include&raquo;| U10
+    U5 -.->|&laquo;include&raquo;| U10
+    U4 -.->|&laquo;extend&raquo;| U7
+
+    classDef uc fill:#eef7ee,stroke:#337733
+    class U1,U2,U3,U4,U5,U6,U7,U8,U9,U10 uc

@@ -1,0 +1,28 @@
+sequenceDiagram
+    autonumber
+    participant G as Core::Game
+    participant PC as Player::PlayerControlSystem
+    participant SL as Common::ServiceLocator
+    participant SPI as Bullet::BulletControlSystem<br/>«BulletSPI»
+    participant SM as Common::SoundManager
+    participant W as Common::World
+
+    G->>PC: process(gameData, world)
+    PC->>PC: keys.isDown(SPACE) and cooldown == 0
+    PC->>W: getEntities(Bullet.class).size() less than  MAX_BULLETS
+    W-->>PC: true
+    PC->>SL: ServiceLoader.load(getLayer(), BulletSPI.class)
+    Note over PC,SL: Player declares "uses BulletSPI"<br/>but never "requires Bullet"
+    SL-->>PC: BulletSPI provider
+    PC->>SPI: createBullet(player, gameData)
+    alt Weapon component installed
+        SPI->>SPI: position and rotate from the shooter
+        SPI->>SPI: category := PLAYER_BULLET
+        SPI->>SM: playShoot()
+        SPI-->>PC: Optional[Bullet]
+        PC->>W: addEntity(bullet)
+        PC->>PC: cooldown := 15 frames
+    else Weapon uninstalled (key 3)
+        SPI-->>PC: Optional.empty()
+        Note over PC: No shot is fired and nothing breaks
+    end

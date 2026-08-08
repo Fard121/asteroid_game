@@ -1,0 +1,21 @@
+flowchart TB
+    S(["Start"]) --> CLONE["git clone the repository"]
+    CLONE --> BUILD["<b>mvn clean install</b> &nbsp;&mdash;&nbsp; from the repository root"]
+    BUILD --> TEST{"21 unit tests pass?"}
+    TEST -->|no| FIX["Fix the failing component"]
+    FIX --> BUILD
+    TEST -->|yes| COPY["maven-dependency-plugin copies each artifact"]
+    COPY --> MODS["<b>mods-mvn/</b><br/>Core, Common, CommonBullet, CommonAsteroids"]
+    COPY --> PLUGS["<b>plugins/</b><br/>Player, Enemy, Bullet, Asteroids, Collision"]
+    COPY --> SCORE["<b>java -jar Scoring-1.0.1-SNAPSHOT.jar</b><br/>JVM 2 &middot; port 8081"]
+    MODS --> RUN["<b>mvn exec:exec --non-recursive</b> &nbsp;&mdash;&nbsp; JVM 1<br/>java --module-path=mods-mvn --module=Core/...Main"]
+    PLUGS --> RUN
+    RUN --> WIN["Game window opens in START_MENU"]
+    WIN --> VERIFY["<b>curl localhost:8081/api/score</b> matches the HUD score"]
+    SCORE --> VERIFY
+    VERIFY --> END(["Deployed and verified"])
+
+    classDef term fill:#e8eefc,stroke:#3355aa
+    classDef art fill:#eef7ee,stroke:#337733
+    class S,END term
+    class MODS,PLUGS art

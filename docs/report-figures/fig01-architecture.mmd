@@ -1,0 +1,53 @@
+flowchart TB
+    subgraph PB["SCORING PROCESS &nbsp;&mdash;&nbsp; JVM 2 &nbsp;&mdash;&nbsp; classpath"]
+        direction LR
+        SC["Spring Boot 3<br/>ScoringApplication + ScoreController<br/>http://localhost:8081/api/score"]
+    end
+
+    subgraph PA["GAME PROCESS &nbsp;&mdash;&nbsp; JVM 1"]
+        direction TB
+        subgraph BL["BOOT MODULE LAYER &nbsp;&mdash;&nbsp; --module-path=mods-mvn/"]
+            direction LR
+            MAIN["<b>Core :: Main</b><br/>javafx Application"]
+            CFG["<b>Core :: ModuleConfig</b><br/>Spring @Configuration"]
+            GAME["<b>Core :: Game</b><br/>AnimationTimer loop<br/>draw + HUD + input"]
+            SCLI["<b>Core :: ScoreClient</b><br/>RestTemplate"]
+            COM["<b>Common</b><br/>Entity, GameData, World<br/>3 service interfaces<br/>ServiceLocator"]
+            CBUL["<b>CommonBullet</b><br/>Bullet, BulletSPI"]
+            CAST["<b>CommonAsteroids</b><br/>Asteroid, AsteroidSize<br/>IAsteroidSplitter"]
+        end
+
+        SLOC["<b>ServiceLocator.INSTANCE</b><br/>ModuleFinder over plugins/ &rarr; Configuration.resolve<br/>&rarr; defineModulesWithOneLoader"]
+
+        subgraph CL["CHILD MODULE LAYER &nbsp;&mdash;&nbsp; plugins/"]
+            direction LR
+            PL["Player"]
+            EN["Enemy"]
+            BU["Bullet"]
+            AS["Asteroids"]
+            CO["Collision"]
+        end
+    end
+
+    MAIN --> CFG
+    CFG --> GAME
+    GAME --> SCLI
+    COM --- CBUL
+    COM --- CAST
+    CFG --> SLOC
+    SLOC --> CL
+    CL -.->|"provide IGamePluginService, IEntityProcessingService,<br/>IPostEntityProcessingService, BulletSPI, IAsteroidSplitter"| COM
+    SCLI -->|"HTTP POST, only when the score changes"| SC
+
+    classDef proc fill:#fafafa,stroke:#222,stroke-width:2px
+    classDef lay  fill:#ffffff,stroke:#666,stroke-width:1px,stroke-dasharray:5 4
+    classDef core fill:#e8eefc,stroke:#3355aa
+    classDef api  fill:#eef7ee,stroke:#337733
+    classDef plug fill:#fdf3e7,stroke:#b5751f
+    classDef svc  fill:#f6ecf7,stroke:#7a3b8f
+    class PA,PB proc
+    class BL,CL lay
+    class MAIN,CFG,GAME,SCLI core
+    class COM,CBUL,CAST api
+    class PL,EN,BU,AS,CO plug
+    class SLOC,SC svc
