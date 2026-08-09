@@ -615,6 +615,7 @@ The full requirement-by-requirement assessment is in [`full_report.md`](full_rep
 
 | Document | Contents |
 |---|---|
+| [`docs/AsteroidsFX-Technical-Report.pdf`](docs/AsteroidsFX-Technical-Report.pdf) | **The hand-in report.** Requirements, analysis, design, implementation, testing and discussion, with UML diagrams, sequence diagrams and captured evidence (43 pages) |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Components, provides/requires, service contracts, known gaps |
 | [`docs/MICROSERVICE.md`](docs/MICROSERVICE.md) | Scoring API, Core dependency, failure handling |
 | [`docs/JPMS_LAB3_SPLIT_PACKAGE.md`](docs/JPMS_LAB3_SPLIT_PACKAGE.md) | Split-package demo and ModuleLayer isolation |

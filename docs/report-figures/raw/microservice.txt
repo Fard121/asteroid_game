@@ -1,0 +1,15 @@
+$ java -jar Scoring/target/Scoring-1.0.1-SNAPSHOT.jar
+2026-08-08T21:45:56.077+08:00  INFO 20300 --- [scoring] [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 8081 (http
+2026-08-08T21:45:56.117+08:00  INFO 20300 --- [scoring] [           main] d.s.m.cbse.scoring.ScoringApplication    : Started ScoringApplication in 4.8
+
+$ curl http://localhost:8081/api/score
+{"score":0}
+
+$ curl -X POST http://localhost:8081/api/score -d "{\"score\":250}" -H "Content-Type: application/json"
+{"score":250}
+
+$ curl http://localhost:8081/api/score
+{"score":250}
+
+$ curl -X POST http://localhost:8081/api/score/reset
+{"score":0}
