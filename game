@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+#
+# Sends one plugin command to the running game and prints its reply.
+#
+#   ./game plugin list
+#   ./game plugin disable Enemy
+#   ./game plugin unload Enemy
+#   ./game plugin load Enemy
+#   ./game plugin enable Enemy
+#
+# The game must already be running (mvn exec:exec --non-recursive); this
+# script never starts, stops or restarts it. Uses bash's built-in
+# /dev/tcp, so there is nothing to install.
+
+set -u
+
+HOST=127.0.0.1
+PORT="${ASTEROIDS_PLUGIN_PORT:-5599}"
+
+if [ "$#" -eq 0 ]; then
+    echo "usage: $0 plugin <list|load|enable|disable|unload|reload> [name]" >&2
+    exit 2
+fi
+
+exec 3<>"/dev/tcp/$HOST/$PORT" 2>/dev/null || {
+    echo "cannot reach the game on $HOST:$PORT - is it running?" >&2
+    exit 1
+}
+
+printf '%s\n' "$*" >&3
+cat <&3
+exec 3<&-
