@@ -18,8 +18,10 @@ import dk.sdu.mmmi.cbse.common.services.IPostEntityProcessingService;
 import dk.sdu.mmmi.cbse.common.sound.SoundManager;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import javafx.animation.AnimationTimer;
 import javafx.animation.KeyFrame;
 import javafx.animation.KeyValue;
@@ -60,15 +62,18 @@ class Game {
     private int menuSelectedIndex = 0;
     private Polygon flamePolygon;
     private final Random random = new Random();
-    private final List<IPostEntityProcessingService> postEntityProcessingServices;
     private final ScoreClient scoreClient;
     private final ComponentRegistry componentRegistry;
     private int lastPushedScore = -1;
 
+    // Commands arriving from the external command channel. Filled by the
+    // socket thread, drained by the game loop at the top of a frame - see
+    // drainPluginCommands().
+    private final Queue<PluginCommandServer.PendingCommand> pluginCommands = new ConcurrentLinkedQueue<>();
+
     Game(List<IGamePluginService> gamePluginServices, List<IEntityProcessingService> entityProcessingServiceList, List<IPostEntityProcessingService> postEntityProcessingServices, ScoreClient scoreClient) {
-        this.postEntityProcessingServices = postEntityProcessingServices;
         this.scoreClient = scoreClient;
-        this.componentRegistry = new ComponentRegistry(gamePluginServices, entityProcessingServiceList);
+        this.componentRegistry = new ComponentRegistry(gamePluginServices, entityProcessingServiceList, postEntityProcessingServices);
     }
 
     public void start(Stage window) throws Exception {
@@ -203,6 +208,11 @@ class Game {
         window.setScene(scene);
         window.setTitle("ASTEROIDS");
         window.show();
+
+        // Opens the loopback command channel used by the `game plugin ...`
+        // script. Purely additive: if it cannot bind, start() logs and the
+        // game runs exactly as it always has.
+        PluginCommandServer.start(PluginCommandServer.DEFAULT_PORT, pluginCommands);
     }
 
     public void render() {
@@ -210,6 +220,11 @@ class Game {
             @Override
             public void handle(long now) {
                 frameCount++;
+
+                // Runs before anything else in the frame, so a plugin is
+                // always installed or removed between two updates rather
+                // than in the middle of one.
+                drainPluginCommands();
 
                 if (gameData.getKeys().isPressed(GameKeys.MUTE)) {
                     SoundManager.toggleMute();
@@ -256,6 +271,90 @@ class Game {
             }
 
         }.start();
+    }
+
+    /**
+     * Executes every command the command channel has parked since the last
+     * frame. Called from {@code handle()}, i.e. on the JavaFX application
+     * thread and outside {@code update()}, which is what lets a plugin be
+     * loaded or unloaded without racing the game loop.
+     *
+     * <p>A command that blows up is reported back to the shell that sent
+     * it and logged - it never escapes into the animation timer, because a
+     * throwing {@code handle()} would stop the timer and freeze the game.
+     */
+    private void drainPluginCommands() {
+        PluginCommandServer.PendingCommand command;
+        while ((command = pluginCommands.poll()) != null) {
+            String result;
+            try {
+                result = executePluginCommand(command.commandLine);
+            } catch (RuntimeException e) {
+                System.err.println("[plugin] command '" + command.commandLine + "' failed: " + e);
+                result = "command failed: " + e;
+            }
+            if (!result.endsWith(System.lineSeparator()) && !result.endsWith("\n")) {
+                result = result + System.lineSeparator();
+            }
+            System.out.print("[plugin] " + command.commandLine + " -> " + result);
+            command.complete(result);
+        }
+    }
+
+    private static final String PLUGIN_USAGE =
+            "usage: plugin <list|load|enable|disable|unload|reload> [name]";
+
+    /**
+     * The whole external command surface. Deliberately tiny - it only maps
+     * words onto the lifecycle operations {@link ComponentRegistry}
+     * already implements.
+     */
+    private String executePluginCommand(String commandLine) {
+        String[] words = commandLine.trim().split("\\s+");
+        int index = 0;
+        // Tolerate a leading "game", so the script can forward its
+        // arguments verbatim.
+        if (index < words.length && words[index].equalsIgnoreCase("game")) {
+            index++;
+        }
+        if (index < words.length && words[index].equalsIgnoreCase("plugin")) {
+            index++;
+        }
+        if (index >= words.length) {
+            return PLUGIN_USAGE;
+        }
+
+        String action = words[index++].toLowerCase();
+        String name = index < words.length ? words[index] : null;
+
+        if (action.equals("list") || action.equals("status")) {
+            return componentRegistry.list();
+        }
+        if (action.equals("help")) {
+            return PLUGIN_USAGE;
+        }
+        if (name == null) {
+            return "'" + action + "' needs a plugin name. " + PLUGIN_USAGE;
+        }
+
+        switch (action) {
+            case "load":
+                return componentRegistry.load(name);
+            case "enable":
+                return componentRegistry.enable(name, gameData, world);
+            case "disable":
+                return componentRegistry.disable(name, gameData, world);
+            case "unload":
+                return componentRegistry.unload(name, gameData, world);
+            case "reload":
+                // Just the documented sequence, run back to back in a
+                // single frame.
+                return componentRegistry.unload(name, gameData, world)
+                        + "; " + componentRegistry.load(name)
+                        + "; " + componentRegistry.enable(name, gameData, world);
+            default:
+                return "unknown action '" + action + "'. " + PLUGIN_USAGE;
+        }
     }
 
     private void handleStateTransitions(GameStateManager stateManager) {
@@ -540,7 +639,7 @@ class Game {
     }
 
     public List<IPostEntityProcessingService> getPostEntityProcessingServices() {
-        return postEntityProcessingServices;
+        return componentRegistry.getActivePostProcessors();
     }
 
 }

@@ -128,7 +128,8 @@ public class PlayerControlSystem implements IEntityProcessingService {
     // rather than via a plain ServiceLoader.load(BulletSPI.class). Player's
     // own module-info already declares `uses BulletSPI`.
     private List<BulletSPI> getBulletSPIs() {
-        return ServiceLoader.load(ServiceLocator.INSTANCE.getLayer(), BulletSPI.class)
-                .stream().map(ServiceLoader.Provider::get).collect(toList());
+        return ServiceLocator.INSTANCE.getLayers().stream()
+                .flatMap(layer -> ServiceLoader.load(layer, BulletSPI.class).stream())
+                .map(ServiceLoader.Provider::get).collect(toList());
     }
 }

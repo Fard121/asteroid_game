@@ -109,16 +109,22 @@ public class EnemyControlSystem implements IEntityProcessingService {
         shootCooldownFramesRemaining = SHOOT_COOLDOWN_FRAMES;
     }
 
-    // Player, Enemy, Bullet, Asteroids, and Collision are all loaded
+    // Player, Enemy, Bullet, Asteroids, and Collision are each loaded
     // dynamically into their own ModuleLayer at runtime (see
     // Common's ServiceLocator / docs/ARCHITECTURE.md) - a plain
     // ServiceLoader.load(BulletSPI.class) does not reliably discover a
-    // sibling plugin's provider from within that layer, so this looks
-    // providers up against the actual plugins layer explicitly. Enemy's own
+    // sibling plugin's provider from within those layers, so this looks
+    // providers up against the actual plugin layers explicitly. Enemy's own
     // module-info already declares `uses BulletSPI`, which is what
     // ServiceLoader.load(ModuleLayer, Class) requires of the caller.
+    //
+    // Iterating every currently-loaded layer (rather than one shared one)
+    // is also what makes this degrade gracefully when Bullet is unloaded at
+    // runtime: the list simply comes back empty and the enemy holds fire,
+    // instead of touching a class that is no longer there.
     private List<BulletSPI> getBulletSPIs() {
-        return ServiceLoader.load(ServiceLocator.INSTANCE.getLayer(), BulletSPI.class)
-                .stream().map(ServiceLoader.Provider::get).collect(toList());
+        return ServiceLocator.INSTANCE.getLayers().stream()
+                .flatMap(layer -> ServiceLoader.load(layer, BulletSPI.class).stream())
+                .map(ServiceLoader.Provider::get).collect(toList());
     }
 }

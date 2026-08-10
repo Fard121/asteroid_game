@@ -178,8 +178,9 @@ public class CollisionDetector implements IPostEntityProcessingService {
     // ServiceLoader.load(IAsteroidSplitter.class). Collision's own
     // module-info already declares `uses IAsteroidSplitter`.
     private List<IAsteroidSplitter> getAsteroidSplitters() {
-        return ServiceLoader.load(ServiceLocator.INSTANCE.getLayer(), IAsteroidSplitter.class)
-                .stream().map(ServiceLoader.Provider::get).collect(toList());
+        return ServiceLocator.INSTANCE.getLayers().stream()
+                .flatMap(layer -> ServiceLoader.load(layer, IAsteroidSplitter.class).stream())
+                .map(ServiceLoader.Provider::get).collect(toList());
     }
 
     private Entity asPlayer(Entity entity1, Entity entity2) {
