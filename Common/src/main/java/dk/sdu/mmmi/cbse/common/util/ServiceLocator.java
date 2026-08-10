@@ -59,9 +59,16 @@ public enum ServiceLocator {
      * the game was launched from. Overridable with
      * {@code -Dasteroids.plugins.dir=...} purely so tests/tooling can point
      * somewhere else; the shipped default is unchanged.
+     *
+     * <p>Deliberately a method, not a {@code static final} field: this is
+     * an enum, so the {@code INSTANCE} constant - and therefore the
+     * constructor below - is initialised <em>before</em> any other static
+     * field is assigned. A static field here would still be {@code null}
+     * during construction.
      */
-    private static final Path PLUGINS_DIR =
-            Paths.get(System.getProperty("asteroids.plugins.dir", "plugins"));
+    private static Path pluginsDir() {
+        return Paths.get(System.getProperty("asteroids.plugins.dir", "plugins"));
+    }
 
     /** A plugin module that is currently resolved into its own layer. */
     private static final class LoadedPlugin {
@@ -122,7 +129,7 @@ public enum ServiceLocator {
      * running is picked up by the next {@code load}.
      */
     public Set<String> discoverModuleNames() {
-        return ModuleFinder.of(PLUGINS_DIR)
+        return ModuleFinder.of(pluginsDir())
                 .findAll()
                 .stream()
                 .map(ModuleReference::descriptor)
@@ -131,7 +138,7 @@ public enum ServiceLocator {
     }
 
     private static ModuleLayer defineLayerFor(String moduleName) {
-        ModuleFinder finder = ModuleFinder.of(PLUGINS_DIR);
+        ModuleFinder finder = ModuleFinder.of(pluginsDir());
 
         // Resolve just this one module against the boot layer's
         // configuration as parent, so its `requires Common` /
@@ -175,7 +182,7 @@ public enum ServiceLocator {
         }
         if (!discoverModuleNames().contains(moduleName)) {
             throw new IllegalArgumentException(
-                    "No module named '" + moduleName + "' found in " + PLUGINS_DIR.toAbsolutePath());
+                    "No module named '" + moduleName + "' found in " + pluginsDir().toAbsolutePath());
         }
         try {
             loadedPlugins.put(moduleName, new LoadedPlugin(moduleName, defineLayerFor(moduleName)));
