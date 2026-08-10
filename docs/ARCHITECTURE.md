@@ -39,16 +39,23 @@ Two details the table above compresses:
   `Common` cannot declare `uses` for those without requiring
   `CommonBullet`/`CommonAsteroids` (which already require `Common` — a
   cycle), so Player, Enemy and Collision declare `uses` in their own
-  `module-info.java` and call
-  `ServiceLoader.load(ServiceLocator.INSTANCE.getLayer(), ...)` directly.
+  `module-info.java` and iterate
+  `ServiceLoader.load(layer, ...)` over every layer returned by
+  `ServiceLocator.INSTANCE.getLayers()` directly. (Each plugin now lives in
+  its own layer — see `PLUGIN_LIFECYCLE.md` — so a cross-plugin lookup has
+  to span layers rather than query a single shared one.)
 
 ## Operation contracts (summary)
 
 - **`IGamePluginService.start`** — called once per plugin, before the game
   loop starts; adds the plugin's initial entities to `World`.
 - **`IGamePluginService.stop`** — removes the plugin's entities; called by
-  Core's `ComponentRegistry` when a component is uninstalled at runtime
-  (keys `1`/`2`/`3`), and followed by a fresh `start` if it is reinstalled.
+  Core's `ComponentRegistry` whenever a component is disabled at runtime
+  (keys `1`/`2`/`3`, or `game plugin disable <name>`), and followed by a
+  fresh `start` when it is enabled again. It is also the first step of an
+  `unload`. Core additionally sweeps any entity whose class belongs to the
+  plugin's own class loader, so a `stop` that misses something cannot leave
+  a dangling reference behind — see `PLUGIN_LIFECYCLE.md`.
 - **`IEntityProcessingService.process`** — called once per frame, before any
   `IPostEntityProcessingService`; advances one component's own entities and
   must not assume other components have already run this frame.
@@ -71,11 +78,14 @@ Two details the table above compresses:
 - **No persistent high-score storage.** `ScoreState` (Common) is in-memory
   only and resets on restart; there is no component responsible for
   persisting a high score across runs.
-- **No full plugin *reload* path.** `IGamePluginService.stop` is now called
-  by `ComponentRegistry` (runtime install/uninstall of Player, Enemy and
-  Weapon), but that only toggles instances already discovered at startup —
-  dropping a new jar into `plugins/` mid-run still requires a restart,
-  because `ServiceLocator` builds its `ModuleLayer` once.
+- ~~**No full plugin *reload* path.**~~ **Closed.** `ServiceLocator` no
+  longer builds one `ModuleLayer` once; it builds **one layer per plugin**,
+  each with its own class loader, and can drop and rebuild an individual
+  layer while the game loop keeps running. `ComponentRegistry` drives the
+  full `load → enable → disable → unload → load → enable` cycle, and
+  `game plugin <action> <name>` exposes it to a shell. No restart, no
+  recompilation, no relinking. See `PLUGIN_LIFECYCLE.md` for the mechanism,
+  the cleanup contract, and the verification evidence.
 - **Scoring was not a separate deployable component** until the Microservices
   Lab work — it lived entirely in-process inside `Common`/`Collision`. See
   `Scoring/` module and `ScoreClient` in Core for the extracted version.
