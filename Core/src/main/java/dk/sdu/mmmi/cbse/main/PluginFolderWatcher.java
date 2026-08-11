@@ -2,9 +2,11 @@ package dk.sdu.mmmi.cbse.main;
 
 import dk.sdu.mmmi.cbse.common.util.ServiceLocator;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Queue;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 /**
@@ -17,11 +19,15 @@ import java.util.function.Consumer;
  * second, with no command typed, and the plugin stays gone across restarts
  * because start-up loads whatever the folder holds.
  *
- * <p><b>Deliberately one-way.</b> Putting a jar back does <em>not</em> load
- * it again. Restoring is an explicit act - {@code game plugin load X} then
- * {@code enable X} - so a plugin never returns unless it is asked for.
- * Auto-restoring would mean a file copied back mid-game silently changes what
- * is running.
+ * <p><b>The folder is the instruction.</b> Deleting a jar removes that
+ * plugin; putting it back restores it, loaded and enabled, within about a
+ * second. Copying the file back is itself the deliberate act of restoring,
+ * so nothing further has to be typed.
+ *
+ * <p>The watcher only ever undoes <em>its own</em> work. A plugin the user
+ * unloaded on purpose with {@code plugin unload} is left alone no matter what
+ * the folder contains, so an explicit decision is never overridden by a file
+ * that merely happens to be present.
  *
  * <p>Polls rather than using a filesystem watch service: a poll is a few
  * directory reads a second, needs no platform-specific event plumbing, and
@@ -37,21 +43,38 @@ final class PluginFolderWatcher {
 
     private final Queue<Runnable> gameThreadActions;
     private final Consumer<String> onJarRemoved;
+    private final Consumer<String> onJarRestored;
     private final Thread thread;
     private volatile boolean stopped;
 
-    private PluginFolderWatcher(Queue<Runnable> gameThreadActions, Consumer<String> onJarRemoved) {
+    /**
+     * Plugins this watcher unloaded because their jar disappeared - and only
+     * those. Putting such a jar back is treated as the user restoring it, so
+     * the plugin comes straight back.
+     *
+     * <p>A plugin the user unloaded deliberately with {@code plugin unload}
+     * never lands in here, so it stays unloaded no matter what the folder
+     * looks like. The rule is simply that the watcher only ever undoes its
+     * own actions, never the user's.
+     */
+    private final Set<String> removedByWatcher = ConcurrentHashMap.newKeySet();
+
+    private PluginFolderWatcher(Queue<Runnable> gameThreadActions,
+            Consumer<String> onJarRemoved, Consumer<String> onJarRestored) {
         this.gameThreadActions = gameThreadActions;
         this.onJarRemoved = onJarRemoved;
+        this.onJarRestored = onJarRestored;
         this.thread = new Thread(this::watch, "plugin-folder-watcher");
         this.thread.setDaemon(true);
     }
 
-    static PluginFolderWatcher start(Queue<Runnable> gameThreadActions, Consumer<String> onJarRemoved) {
-        PluginFolderWatcher watcher = new PluginFolderWatcher(gameThreadActions, onJarRemoved);
+    static PluginFolderWatcher start(Queue<Runnable> gameThreadActions,
+            Consumer<String> onJarRemoved, Consumer<String> onJarRestored) {
+        PluginFolderWatcher watcher =
+                new PluginFolderWatcher(gameThreadActions, onJarRemoved, onJarRestored);
         watcher.thread.start();
-        System.out.println("[plugin] watching plugins/ - deleting a jar unloads that plugin; "
-                + "put it back and run 'game plugin load <name>' to restore it");
+        System.out.println("[plugin] watching plugins/ - delete a jar to remove that plugin "
+                + "from the running game, put it back to restore it");
         return watcher;
     }
 
@@ -77,9 +100,26 @@ final class PluginFolderWatcher {
 
         for (String moduleName : loaded) {
             if (!onDisk.contains(moduleName)) {
-                // Hand the work to the game thread rather than doing it here.
+                // Remember that *we* took this one out, so that putting the
+                // jar back can bring it back. Hand the work to the game
+                // thread rather than doing it here.
+                removedByWatcher.add(moduleName);
                 gameThreadActions.add(() -> onJarRemoved.accept(moduleName));
             }
+        }
+
+        for (String moduleName : new ArrayList<>(removedByWatcher)) {
+            if (!onDisk.contains(moduleName)) {
+                continue; // still gone
+            }
+            if (loaded.contains(moduleName)) {
+                // Already back - the user loaded it by command before the
+                // jar reappeared, or the restore below has been applied.
+                removedByWatcher.remove(moduleName);
+                continue;
+            }
+            removedByWatcher.remove(moduleName);
+            gameThreadActions.add(() -> onJarRestored.accept(moduleName));
         }
     }
 

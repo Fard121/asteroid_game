@@ -220,12 +220,21 @@ class Game {
         // game runs exactly as it always has.
         PluginCommandServer.start(PluginCommandServer.DEFAULT_PORT, pluginCommands);
 
-        // Deleting a plugin jar takes that plugin out of the running game.
-        // Restoring is never automatic - see PluginFolderWatcher.
-        PluginFolderWatcher.start(gameThreadActions, moduleName -> {
-            System.out.println("[plugin] " + moduleName + ": jar removed from plugins/ - unloading");
-            componentRegistry.unload(moduleName, gameData, world);
-        });
+        // The plugins/ folder drives what is running: delete a jar and that
+        // plugin leaves the game, put it back and it returns - see
+        // PluginFolderWatcher. Both callbacks run on the game thread.
+        PluginFolderWatcher.start(gameThreadActions,
+                moduleName -> {
+                    System.out.println("[plugin] " + moduleName
+                            + ": jar removed from plugins/ - unloading");
+                    componentRegistry.unload(moduleName, gameData, world);
+                },
+                moduleName -> {
+                    String loaded = componentRegistry.load(moduleName);
+                    String enabled = componentRegistry.enable(moduleName, gameData, world);
+                    System.out.println("[plugin] " + moduleName
+                            + ": jar restored to plugins/ - " + loaded + "; " + enabled);
+                });
     }
 
     public void render() {
