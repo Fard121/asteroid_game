@@ -93,6 +93,29 @@ Consequences:
   simply comes back empty and nobody fires, rather than touching a missing
   class.
 
+### 3.1 Plugins load from a staged copy, not from `plugins/`
+
+A module layer keeps the jar it was loaded from **open** for as long as its
+class loader is alive, and only the garbage collector decides when that ends.
+On Windows an open file cannot be deleted or renamed at all. Loading straight
+out of `plugins/` therefore made the user's own jar undeletable — not just
+while the plugin was loaded, but for an unpredictable period *after* an unload,
+because a single strong reference anywhere delays collection indefinitely.
+
+`ServiceLocator.stageJarOf` copies the jar into a private staging directory
+under the OS temp folder and builds the layer from *that*. Consequences:
+
+- The jars in `plugins/` are only ever read briefly, so they can be deleted or
+  replaced **at any time**, whether or not the plugin is loaded.
+- Each load stages to a fresh directory, so a staged copy still held open by a
+  not-yet-collected loader can never block the next load.
+- Staged copies are deleted on unload, best-effort, and registered for deletion
+  on JVM exit.
+
+This also decouples the feature from garbage-collector timing: jar replacement
+is now deterministic, and class-loader reclamation is a separate, purely
+informational matter reported by `plugin list`.
+
 ### Why `ModuleLayer` and not `URLClassLoader`
 
 Both give dynamic class loading. `ModuleLayer` was chosen because the project
@@ -223,12 +246,18 @@ Player/Enemy/Weapon exactly as before.
 
 ### Replacing a jar at runtime
 
+Plugins are loaded from a **private staged copy**, never straight out of
+`plugins/` (see §3.1), so the jars in `plugins/` are never held open. They can
+be deleted, replaced or upgraded at any moment while the game is running —
+including while the plugin is loaded and enabled.
+
 ```text
-./game plugin unload Enemy      # jar handle released
-cp new/Enemy-1.0.1-SNAPSHOT.jar plugins/
-./game plugin load Enemy        # re-read from disk into a new loader
-./game plugin enable Enemy
+cp new/Enemy-1.0.1-SNAPSHOT.jar plugins/   # allowed at any time
+./game plugin reload Enemy                 # picks up whatever is on disk now
 ```
+
+The running plugin keeps working from its staged copy until you reload it, so
+replacing a jar never disturbs the frame in progress.
 
 ---
 
@@ -262,7 +291,9 @@ shell.
 | 10 consecutive `disable → unload → load → enable` cycles | All passed, stable |
 | Full cycle on all five modules | Each reported `class loader released`; only the target was affected |
 | Class loader actually collected | `plugin list` reports `class loader released` after `unload` |
-| Jar handle actually released | `Enemy-1.0.1-SNAPSHOT.jar` renamed on disk while the game ran — no file lock |
+| Jar deletable while plugin **loaded and enabled** | `Bullet-1.0.1-SNAPSHOT.jar` deleted mid-run with no lock; the plugin kept working from its staged copy |
+| All five jars deleted at once mid-run | `plugins/` emptied while playing; game unaffected; all restored and reloaded |
+| Missing jar handled | `load Bullet` with no jar on disk reports the error and leaves the game running |
 | Error paths (`unload Nonexistent`, `load Nonexistent`, bad action, empty command) | Handled, game unaffected |
 | 93 commands total | **Zero** unexpected exceptions — no `NullPointerException`, `ConcurrentModificationException`, `ClassNotFoundException` or `NoClassDefFoundError` |
 | `mvn clean install` | Green, full test suite passing |
@@ -287,10 +318,20 @@ Stated explicitly so the capability is not over-claimed.
   executor or registered an outside listener would have nothing to shut it
   down, and its loader would leak. Adding a `close()`/`dispose()` step to the
   service interface is the natural extension.
-- **Class loader release is GC-dependent.** `unload` drops every reference and
-  hints the collector; `plugin list` reports honestly whether collection has
-  actually happened. A `class loader not yet collected` reading means the GC
-  has not run yet, not that a reference is being held.
+- **Class-loader reclamation is GC-dependent, and not always achieved.**
+  `unload` drops every reference this system holds and then waits (off the game
+  thread) for the loader to be collected. In practice some plugins are reclaimed
+  and others are not: `Player` and `Bullet` have been observed still reachable
+  after a forced full GC, so a strong reference survives somewhere — most likely
+  a JDK-internal or JavaFX-side cache rather than this code, but it has not been
+  traced to its root. `plugin list` reports the true state rather than assuming
+  success.
+
+  This is a **diagnostic** limitation, not a functional one: because plugins load
+  from a staged copy, replacing a jar never depended on reclamation. What an
+  unreclaimed loader does cost is memory — repeatedly unloading and reloading such
+  a plugin retains the old classes, so it is not suitable as an indefinite
+  hot-reload loop for those two components.
 - **Startup still loads every jar in `plugins/`.** Selective startup loading is
   not implemented; unwanted plugins are disabled or unloaded after the fact.
 

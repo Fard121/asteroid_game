@@ -289,11 +289,11 @@ class ComponentRegistry {
 
         component.state = State.UNLOADED;
 
-        // Only a hint. Nothing depends on it having run - it just lets
-        // 'plugin list' show the loader as actually released, and releases
-        // the jar file handle so the jar can be replaced on disk.
-        System.gc();
-
+        // Deliberately no System.gc() here: this runs on the game thread, and
+        // forcing collections on it would stall the loop. Actually waiting for
+        // the loader (and with it the jar file handle) to be released is done
+        // off-thread by Game, which answers the shell only once it has
+        // happened - see Game.completeWhenClassLoaderReleased.
         return result.append(component.moduleName).append(" unloaded").toString();
     }
 
@@ -394,6 +394,14 @@ class ComponentRegistry {
             }
         }
         return removed;
+    }
+
+    /**
+     * The JPMS module name a user-typed name refers to, resolving the
+     * historical aliases (so {@code Weapon} answers {@code Bullet}).
+     */
+    String moduleNameOf(String name) {
+        return resolveModuleName(name);
     }
 
     /** Case-insensitive lookup by module name or historical alias. */

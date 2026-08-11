@@ -4,9 +4,13 @@ import java.lang.module.Configuration;
 import java.lang.module.ModuleDescriptor;
 import java.lang.module.ModuleFinder;
 import java.lang.module.ModuleReference;
+import java.io.File;
+import java.io.IOException;
 import java.lang.ref.WeakReference;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -45,6 +49,14 @@ import java.util.stream.Collectors;
  * intact, and strengthen it: two plugins that export the same package can
  * no longer even meet in the same configuration.
  *
+ * <p><b>Plugins are loaded from a private staged copy</b>, never straight
+ * out of {@code plugins/} - see {@link #stageJarOf}. A layer holds its jar
+ * open for as long as its loader lives, and only the collector decides
+ * when that ends, so loading the original file directly would make the
+ * user's jar undeletable for an unpredictable period after an unload.
+ * Staging removes the guesswork: the jars in {@code plugins/} can be
+ * deleted or replaced at any time while the game is running.
+ *
  * <p>Because each plugin now lives in a separate layer, a cross-plugin
  * service lookup (Enemy/Player asking for {@code BulletSPI}, Collision
  * asking for {@code IAsteroidSplitter}) has to iterate {@link #getLayers()}
@@ -76,6 +88,8 @@ public enum ServiceLocator {
         final String moduleName;
         final ModuleLayer layer;
         final ClassLoader loader;
+        /** The private copy this plugin was actually loaded from. */
+        final Path stagedDirectory;
         /**
          * Provider instances per service type, so repeated
          * {@link #locateAll} calls hand back the same objects the game is
@@ -85,10 +99,11 @@ public enum ServiceLocator {
          */
         final Map<Class<?>, List<?>> providerCache = new LinkedHashMap<>();
 
-        LoadedPlugin(String moduleName, ModuleLayer layer) {
+        LoadedPlugin(String moduleName, ModuleLayer layer, Path stagedDirectory) {
             this.moduleName = moduleName;
             this.layer = layer;
             this.loader = layer.findLoader(moduleName);
+            this.stagedDirectory = stagedDirectory;
         }
     }
 
@@ -102,13 +117,21 @@ public enum ServiceLocator {
      */
     private final Map<String, WeakReference<ClassLoader>> unloadedLoaders = new LinkedHashMap<>();
 
+    /** Where plugin jars are copied to before being loaded; see {@link #stageJarOf}. */
+    private final Path stagingRoot;
+
+    /** Makes every staged copy's path unique, so loads never collide. */
+    private int stagingCounter;
+
     ServiceLocator() {
         // Startup behaviour is unchanged: every module sitting in
         // plugins/ is loaded up front, and a plugin that cannot be
         // resolved is a hard startup failure (same message as before).
         try {
+            stagingRoot = Files.createTempDirectory("asteroids-plugins-staged");
+            stagingRoot.toFile().deleteOnExit();
             for (String moduleName : discoverModuleNames()) {
-                loadedPlugins.put(moduleName, new LoadedPlugin(moduleName, defineLayerFor(moduleName)));
+                loadedPlugins.put(moduleName, stageAndDefine(moduleName));
             }
         } catch (Exception e) {
             throw new RuntimeException(
@@ -137,8 +160,43 @@ public enum ServiceLocator {
                 .collect(Collectors.toCollection(TreeSet::new));
     }
 
-    private static ModuleLayer defineLayerFor(String moduleName) {
-        ModuleFinder finder = ModuleFinder.of(pluginsDir());
+    /**
+     * Copies a plugin's jar out of {@code plugins/} into a private staging
+     * directory, and returns that directory.
+     *
+     * <p>This is what makes a plugin jar replaceable at runtime. A module
+     * layer keeps the jar it was loaded from open for as long as its class
+     * loader is alive, and how long that is depends on the garbage collector,
+     * which is not something a program may dictate - on Windows an open file
+     * also cannot be deleted or renamed at all. Loading from a private copy
+     * means the jar sitting in {@code plugins/} is only ever read briefly, so
+     * it can be deleted, replaced or upgraded at any moment while the game
+     * runs, whether or not the plugin is currently loaded and whether or not
+     * the collector has got round to the old loader yet.
+     *
+     * <p>Each load stages to a fresh directory, so a staged copy that is still
+     * held open by a not-yet-collected loader can never block the next load.
+     */
+    private Path stageJarOf(String moduleName) throws IOException {
+        ModuleReference reference = ModuleFinder.of(pluginsDir())
+                .find(moduleName)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "No module named '" + moduleName + "' found in " + pluginsDir().toAbsolutePath()));
+
+        Path source = reference.location()
+                .map(Paths::get)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Module '" + moduleName + "' has no readable location on disk"));
+
+        Path staged = stagingRoot.resolve(moduleName + "-" + stagingCounter++);
+        Files.createDirectories(staged);
+        Files.copy(source, staged.resolve(source.getFileName().toString()),
+                StandardCopyOption.REPLACE_EXISTING);
+        return staged;
+    }
+
+    private ModuleLayer defineLayerFor(String moduleName, Path stagedDirectory) {
+        ModuleFinder finder = ModuleFinder.of(stagedDirectory);
 
         // Resolve just this one module against the boot layer's
         // configuration as parent, so its `requires Common` /
@@ -154,6 +212,36 @@ public enum ServiceLocator {
         return ModuleLayer
                 .boot()
                 .defineModulesWithOneLoader(configuration, ClassLoader.getSystemClassLoader());
+    }
+
+    private LoadedPlugin stageAndDefine(String moduleName) throws IOException {
+        Path staged = stageJarOf(moduleName);
+        return new LoadedPlugin(moduleName, defineLayerFor(moduleName, staged), staged);
+    }
+
+    /**
+     * Best-effort removal of a staged copy once its plugin has been unloaded.
+     * A failure here is harmless and deliberately ignored: the staged copy
+     * lives under the OS temp directory, is registered for deletion on exit,
+     * and never blocks anything, because the next load stages to a new
+     * directory anyway.
+     */
+    private static void discardStaged(Path stagedDirectory) {
+        if (stagedDirectory == null) {
+            return;
+        }
+        File directory = stagedDirectory.toFile();
+        File[] staged = directory.listFiles();
+        if (staged != null) {
+            for (File file : staged) {
+                // deleteOnExit first, so a copy the collector has not
+                // released yet still goes away when the JVM stops.
+                file.deleteOnExit();
+                file.delete();
+            }
+        }
+        directory.deleteOnExit();
+        directory.delete();
     }
 
     // ------------------------------------------------------------------
@@ -185,7 +273,7 @@ public enum ServiceLocator {
                     "No module named '" + moduleName + "' found in " + pluginsDir().toAbsolutePath());
         }
         try {
-            loadedPlugins.put(moduleName, new LoadedPlugin(moduleName, defineLayerFor(moduleName)));
+            loadedPlugins.put(moduleName, stageAndDefine(moduleName));
             unloadedLoaders.remove(moduleName);
         } catch (Exception e) {
             throw new IllegalStateException("Could not load plugin module '" + moduleName + "': " + e, e);
@@ -210,6 +298,7 @@ public enum ServiceLocator {
         }
         plugin.providerCache.clear();
         unloadedLoaders.put(moduleName, new WeakReference<>(plugin.loader));
+        discardStaged(plugin.stagedDirectory);
         return true;
     }
 
@@ -223,6 +312,52 @@ public enum ServiceLocator {
     public synchronized boolean isClassLoaderReleased(String moduleName) {
         WeakReference<ClassLoader> reference = unloadedLoaders.get(moduleName);
         return reference != null && reference.get() == null;
+    }
+
+    /**
+     * Waits, up to {@code timeoutMillis}, for an unloaded plugin's class
+     * loader to actually be collected, encouraging the collector along the
+     * way.
+     *
+     * <p>This matters for one concrete reason: the plugin's jar stays open
+     * for as long as its loader is alive, and an open file cannot be deleted
+     * or replaced on Windows. Dropping the references (which
+     * {@link #unloadPlugin} does) makes the loader collectable, but only the
+     * garbage collector can actually release the file handle, and exactly
+     * when it runs is not something a program may assume.
+     *
+     * <p><b>Never call this on the game thread.</b> It sleeps and forces
+     * collections; the caller must run it on a background thread so the game
+     * loop keeps rendering. {@code Game} answers a {@code plugin unload}
+     * command from such a thread, which is why "unload, then replace the
+     * jar" is safe by the time the shell prints its reply.
+     *
+     * @return whether the loader had been collected before the timeout
+     */
+    public boolean awaitClassLoaderRelease(String moduleName, long timeoutMillis) {
+        WeakReference<ClassLoader> reference;
+        synchronized (this) {
+            reference = unloadedLoaders.get(moduleName);
+        }
+        if (reference == null) {
+            return false;
+        }
+
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+        while (reference.get() != null && System.currentTimeMillis() < deadline) {
+            System.gc();
+            // A little allocation pressure makes the collector far more
+            // likely to actually run rather than ignore the hint.
+            @SuppressWarnings("unused")
+            byte[] pressure = new byte[1 << 20];
+            try {
+                Thread.sleep(25);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        return reference.get() == null;
     }
 
     /**

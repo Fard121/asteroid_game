@@ -16,6 +16,7 @@ import dk.sdu.mmmi.cbse.common.services.IEntityProcessingService;
 import dk.sdu.mmmi.cbse.common.services.IGamePluginService;
 import dk.sdu.mmmi.cbse.common.services.IPostEntityProcessingService;
 import dk.sdu.mmmi.cbse.common.sound.SoundManager;
+import dk.sdu.mmmi.cbse.common.util.ServiceLocator;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
@@ -288,17 +289,52 @@ class Game {
         while ((command = pluginCommands.poll()) != null) {
             String result;
             try {
-                result = executePluginCommand(command.commandLine);
+                result = executePluginCommand(command.commandLine, command);
             } catch (RuntimeException e) {
                 System.err.println("[plugin] command '" + command.commandLine + "' failed: " + e);
                 result = "command failed: " + e;
             }
-            if (!result.endsWith(System.lineSeparator()) && !result.endsWith("\n")) {
-                result = result + System.lineSeparator();
+            // A null result means the command answers for itself later, off
+            // the game thread (see completeWhenClassLoaderReleased).
+            if (result != null) {
+                answer(command, result);
             }
-            System.out.print("[plugin] " + command.commandLine + " -> " + result);
-            command.complete(result);
         }
+    }
+
+    private void answer(PluginCommandServer.PendingCommand command, String result) {
+        if (!result.endsWith(System.lineSeparator()) && !result.endsWith("\n")) {
+            result = result + System.lineSeparator();
+        }
+        System.out.print("[plugin] " + command.commandLine + " -> " + result);
+        command.complete(result);
+    }
+
+    /**
+     * Finishes an {@code unload} on a background thread once the plugin's
+     * class loader has actually been collected.
+     *
+     * <p>The bookkeeping half of an unload is already done at this point: the
+     * game no longer references the plugin at all. What remains is outside the
+     * program's control - the collector has to run before the plugin's jar
+     * file handle is released, and until it does the jar cannot be deleted or
+     * replaced on disk. Waiting for that on the game thread would stall the
+     * loop, so the wait happens here instead and the shell simply gets its
+     * reply a moment later, by which time replacing the jar is safe.
+     */
+    private void completeWhenClassLoaderReleased(PluginCommandServer.PendingCommand command,
+            String moduleName, String message) {
+        Thread releaser = new Thread(() -> {
+            boolean released = ServiceLocator.INSTANCE.awaitClassLoaderRelease(moduleName, 3000);
+            // The jar in plugins/ is replaceable either way, because plugins
+            // are loaded from a staged copy - this only reports whether the
+            // old classes have additionally been reclaimed yet.
+            answer(command, message + (released
+                    ? "; class loader released"
+                    : "; classes not reclaimed yet (the jar is still free to replace)"));
+        }, "plugin-unload-release");
+        releaser.setDaemon(true);
+        releaser.start();
     }
 
     private static final String PLUGIN_USAGE =
@@ -309,7 +345,7 @@ class Game {
      * words onto the lifecycle operations {@link ComponentRegistry}
      * already implements.
      */
-    private String executePluginCommand(String commandLine) {
+    private String executePluginCommand(String commandLine, PluginCommandServer.PendingCommand command) {
         String[] words = commandLine.trim().split("\\s+");
         int index = 0;
         // Tolerate a leading "game", so the script can forward its
@@ -344,8 +380,11 @@ class Game {
                 return componentRegistry.enable(name, gameData, world);
             case "disable":
                 return componentRegistry.disable(name, gameData, world);
-            case "unload":
-                return componentRegistry.unload(name, gameData, world);
+            case "unload": {
+                String message = componentRegistry.unload(name, gameData, world);
+                completeWhenClassLoaderReleased(command, componentRegistry.moduleNameOf(name), message);
+                return null; // answered off-thread, once the jar handle is free
+            }
             case "reload":
                 // Just the documented sequence, run back to back in a
                 // single frame.
