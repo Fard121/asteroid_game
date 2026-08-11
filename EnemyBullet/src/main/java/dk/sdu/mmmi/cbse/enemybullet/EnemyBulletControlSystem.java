@@ -1,4 +1,4 @@
-package dk.sdu.mmmi.cbse.bulletsystem;
+package dk.sdu.mmmi.cbse.enemybullet;
 
 import dk.sdu.mmmi.cbse.common.bullet.Bullet;
 import dk.sdu.mmmi.cbse.common.bullet.BulletSPI;
@@ -12,14 +12,28 @@ import dk.sdu.mmmi.cbse.common.sound.SoundManager;
 
 import java.util.Optional;
 
-public class BulletControlSystem implements IEntityProcessingService, BulletSPI {
+/**
+ * The player's weapon: creates and advances {@link EntityCategory#ENEMY_BULLET}
+ * projectiles, and nothing else.
+ *
+ * <p>This is one half of what used to be a single Bullet component. Player and
+ * enemy fire are two independently deployable plugins so that either can be
+ * removed on its own - delete this jar and the player stops shooting while
+ * enemies carry on, or the reverse. Both still produce the shared
+ * {@link Bullet} entity type from CommonBullet, so collision and rendering are
+ * unchanged and treat every projectile alike.
+ *
+ * <p>Both halves are offered through the same {@link BulletSPI} contract, so a
+ * shooter does not choose a provider by name; it offers itself to each provider
+ * in turn and uses whichever one answers. {@link #createBullet} declines any
+ * shooter that is not the player, which is what keeps the two apart.
+ */
+public class EnemyBulletControlSystem implements IEntityProcessingService, BulletSPI {
 
-    // Shared across every instance (Player/Enemy each construct their own
-    // via a fresh ServiceLoader.load(BulletSPI.class) call per shot, rather
-    // than reusing Core's canonical IEntityProcessingService instance), so
-    // this needs to be static, not a per-instance field, for
-    // BulletPlugin.start()/stop() to actually gate createBullet() for all of
-    // them.
+    // Shared across every instance, because Player constructs its own copy
+    // through ServiceLoader on each shot rather than reusing Core's canonical
+    // processor instance. Static is what lets the plugin's start/stop gate
+    // createBullet for all of them at once.
     private static volatile boolean installed = true;
 
     static void setInstalled(boolean value) {
@@ -28,8 +42,10 @@ public class BulletControlSystem implements IEntityProcessingService, BulletSPI 
 
     @Override
     public void process(GameData gameData, World world) {
-
         for (Entity entity : world.getEntities(Bullet.class)) {
+            if (entity.getCategory() != EntityCategory.ENEMY_BULLET) {
+                continue; // the player's own component advances its bullets
+            }
             Bullet bullet = (Bullet) entity;
 
             double changeX = Math.cos(Math.toRadians(bullet.getRotation()));
@@ -51,22 +67,14 @@ public class BulletControlSystem implements IEntityProcessingService, BulletSPI 
 
     @Override
     public Optional<Entity> createBullet(Entity shooter, GameData gameData) {
+        if (shooter.getCategory() == EntityCategory.PLAYER) {
+            // Not ours - the player's bullet component answers for the player.
+            return Optional.empty();
+        }
         if (!installed) {
             return Optional.empty();
         }
-
-        // Enemy bullets and player bullets are the same class but two
-        // different runtime categories, and each is switched on and off
-        // independently. Deciding here - at the moment of creation, from the
-        // shooter's own category - is what makes "delete the enemy bullets"
-        // actually stop enemies from shooting, rather than merely clearing
-        // the ones already in flight. A silenced shooter still runs its
-        // normal behaviour; it just gets nothing back.
-        boolean firedByPlayer = shooter.getCategory() == EntityCategory.PLAYER;
-        RuntimeObjectCategory required = firedByPlayer
-                ? RuntimeObjectCategory.PLAYER_BULLETS
-                : RuntimeObjectCategory.ENEMY_BULLETS;
-        if (!gameData.getRuntimeObjectState().isActive(required)) {
+        if (!gameData.getRuntimeObjectState().isActive(RuntimeObjectCategory.ENEMY_BULLETS)) {
             return Optional.empty();
         }
 
@@ -78,9 +86,7 @@ public class BulletControlSystem implements IEntityProcessingService, BulletSPI 
         bullet.setY(shooter.getY() + changeY * 10);
         bullet.setRotation(shooter.getRotation());
         bullet.setRadius(1);
-        bullet.setCategory(shooter.getCategory() == EntityCategory.PLAYER
-                ? EntityCategory.PLAYER_BULLET
-                : EntityCategory.ENEMY_BULLET);
+        bullet.setCategory(EntityCategory.ENEMY_BULLET);
         SoundManager.playShoot();
         return Optional.of(bullet);
     }

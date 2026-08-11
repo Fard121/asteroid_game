@@ -4,6 +4,7 @@ import dk.sdu.mmmi.cbse.common.bullet.Bullet;
 import dk.sdu.mmmi.cbse.common.bullet.BulletSPI;
 import dk.sdu.mmmi.cbse.common.data.Entity;
 import dk.sdu.mmmi.cbse.common.data.GameData;
+import dk.sdu.mmmi.cbse.common.data.RuntimeObjectCategory;
 import dk.sdu.mmmi.cbse.common.data.World;
 import dk.sdu.mmmi.cbse.common.services.IEntityProcessingService;
 import dk.sdu.mmmi.cbse.common.util.ServiceLocator;
@@ -32,7 +33,19 @@ public class EnemyControlSystem implements IEntityProcessingService {
     @Override
     public void process(GameData gameData, World world) {
 
+        boolean enemiesActive = gameData.getRuntimeObjectState()
+                .isActive(RuntimeObjectCategory.ENEMY);
+
         if (world.getEntities(Enemy.class).isEmpty()) {
+            if (!enemiesActive) {
+                // Deactivated: an empty field is a valid, stable state, so
+                // the respawn timer is held at zero rather than counting
+                // down. Restoring the category therefore brings an enemy
+                // back on the very next frame instead of after another
+                // three-second wait.
+                framesUntilSpawn = 0;
+                return;
+            }
             // Covers both the initial delay before the first enemy appears
             // and the respawn delay after one is destroyed.
             if (framesUntilSpawn > 0) {
@@ -102,9 +115,17 @@ public class EnemyControlSystem implements IEntityProcessingService {
             return;
         }
         if (world.getEntities(Bullet.class).size() < Bullet.MAX_BULLETS) {
-            getBulletSPIs().stream().findFirst().ifPresent(
-                    spi -> spi.createBullet(enemy, gameData).ifPresent(world::addEntity)
-            );
+            // See PlayerControlSystem: every BulletSPI provider is offered
+            // the shot and only the enemy's own component answers, so
+            // deleting the enemy weapon silences enemies without touching
+            // the player's.
+            for (BulletSPI spi : getBulletSPIs()) {
+                java.util.Optional<Entity> created = spi.createBullet(enemy, gameData);
+                if (created.isPresent()) {
+                    world.addEntity(created.get());
+                    break;
+                }
+            }
         }
         shootCooldownFramesRemaining = SHOOT_COOLDOWN_FRAMES;
     }

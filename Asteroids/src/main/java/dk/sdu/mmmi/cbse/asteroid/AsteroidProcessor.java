@@ -4,6 +4,7 @@ import dk.sdu.mmmi.cbse.common.asteroids.Asteroid;
 import dk.sdu.mmmi.cbse.common.asteroids.AsteroidSize;
 import dk.sdu.mmmi.cbse.common.data.Entity;
 import dk.sdu.mmmi.cbse.common.data.GameData;
+import dk.sdu.mmmi.cbse.common.data.RuntimeObjectCategory;
 import dk.sdu.mmmi.cbse.common.data.World;
 import dk.sdu.mmmi.cbse.common.services.IEntityProcessingService;
 import dk.sdu.mmmi.cbse.common.sound.SoundManager;
@@ -15,6 +16,13 @@ public class AsteroidProcessor implements IEntityProcessingService {
 
     private final Random random = new Random();
 
+    /**
+     * Remembers that the field was emptied because the Asteroids category was
+     * switched off, so that reactivating it restocks the current wave instead
+     * of being mistaken for the player having cleared it.
+     */
+    private boolean waveSuppressedWhileInactive = false;
+
     @Override
     public void process(GameData gameData, World world) {
 
@@ -22,6 +30,25 @@ public class AsteroidProcessor implements IEntityProcessingService {
         gameData.setAsteroidsRemaining(asteroids.size());
 
         if (asteroids.isEmpty()) {
+            if (!gameData.getRuntimeObjectState().isActive(RuntimeObjectCategory.ASTEROIDS)) {
+                // An empty field normally means "wave cleared", but while the
+                // category is deactivated it means "deliberately emptied".
+                // Advancing the wave here would both spawn asteroids straight
+                // back and march the run towards the victory wave, so the
+                // whole branch is skipped and zero asteroids stays a stable
+                // state for as long as the category is off.
+                waveSuppressedWhileInactive = true;
+                return;
+            }
+            if (waveSuppressedWhileInactive) {
+                // Coming back from deactivation: restock the wave the player
+                // was already on rather than promoting them to the next one,
+                // so repeatedly deleting and restoring asteroids cannot
+                // advance the game towards victory.
+                waveSuppressedWhileInactive = false;
+                respawnCurrentWave(gameData, world);
+                return;
+            }
             spawnNextWave(gameData, world);
             return;
         }
@@ -61,6 +88,11 @@ public class AsteroidProcessor implements IEntityProcessingService {
     private void spawnNextWave(GameData gameData, World world) {
         gameData.getWaveState().nextWave();
         SoundManager.playWaveComplete();
+        respawnCurrentWave(gameData, world);
+    }
+
+    /** Fills the field for whatever wave the player is already on. */
+    private void respawnCurrentWave(GameData gameData, World world) {
         int count = gameData.getWaveState().getAsteroidCountForCurrentWave();
         for (int i = 0; i < count; i++) {
             world.addEntity(createRandomAsteroid(gameData));

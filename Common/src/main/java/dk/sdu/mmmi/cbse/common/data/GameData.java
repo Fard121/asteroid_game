@@ -9,6 +9,7 @@ public class GameData {
     private final ScoreState scoreState = new ScoreState();
     private final WaveState waveState = new WaveState();
     private final GameStateManager gameStateManager = new GameStateManager();
+    private final RuntimeObjectState runtimeObjectState = new RuntimeObjectState();
     private int asteroidsRemaining = 0;
 
 
@@ -30,6 +31,15 @@ public class GameData {
 
     public GameStateManager getGameStateManager() {
         return gameStateManager;
+    }
+
+    /**
+     * Which runtime object categories (enemies, enemy bullets, player
+     * bullets, asteroids) may currently create objects. Producers must
+     * consult this before spawning - see {@link RuntimeObjectState}.
+     */
+    public RuntimeObjectState getRuntimeObjectState() {
+        return runtimeObjectState;
     }
 
     public void setAsteroidsRemaining(int asteroidsRemaining) {

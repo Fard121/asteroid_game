@@ -9,6 +9,8 @@ import dk.sdu.mmmi.cbse.common.services.IPostEntityProcessingService;
 import dk.sdu.mmmi.cbse.common.util.ServiceLocator;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -61,10 +63,27 @@ class ComponentRegistry {
      * {@code plugin unload Weapon} both resolve to module {@code Bullet}.
      */
     private static final String[][] NAME_ALIASES = {
-        {"weapon", "Bullet"},
-        {"weapons", "Bullet"},
-        {"asteroids", "Asteroid"}
+        {"asteroids", "Asteroid"},
+        {"playerbullets", "PlayerBullet"},
+        {"enemybullets", "EnemyBullet"}
     };
+
+    /**
+     * Names that stand for more than one module. "Weapon" is what key 3 has
+     * always toggled, and it used to mean the single Bullet component; now
+     * that player and enemy fire are separate plugins it means both of them,
+     * so the key keeps behaving exactly as it did.
+     */
+    private static final String[] WEAPON_MODULES = {"PlayerBullet", "EnemyBullet"};
+
+    private static List<String> expand(String name) {
+        String lowercase = name == null ? "" : name.trim().toLowerCase(Locale.ROOT);
+        if (lowercase.equals("weapon") || lowercase.equals("weapons")
+                || lowercase.equals("bullet") || lowercase.equals("bullets")) {
+            return Arrays.asList(WEAPON_MODULES);
+        }
+        return Collections.singletonList(name);
+    }
 
     private static final class Component {
 
@@ -151,14 +170,16 @@ class ComponentRegistry {
      * keys have always had. Unknown names are a no-op.
      */
     void toggle(String name, GameData gameData, World world) {
-        Component component = find(name);
-        if (component == null) {
-            return;
-        }
-        if (component.state == State.ENABLED) {
-            disable(name, gameData, world);
-        } else {
-            enable(name, gameData, world);
+        for (String moduleName : expand(name)) {
+            Component component = find(moduleName);
+            if (component == null) {
+                continue;
+            }
+            if (component.state == State.ENABLED) {
+                disable(moduleName, gameData, world);
+            } else {
+                enable(moduleName, gameData, world);
+            }
         }
     }
 

@@ -90,9 +90,19 @@ public class PlayerControlSystem implements IEntityProcessingService {
             }
             if (gameData.getKeys().isDown(GameKeys.SPACE) && shootCooldownFramesRemaining <= 0
                     && world.getEntities(Bullet.class).size() < Bullet.MAX_BULLETS) {
-                getBulletSPIs().stream().findFirst().ifPresent(
-                        spi -> spi.createBullet(player, gameData).ifPresent(world::addEntity)
-                );
+                // Player and enemy fire are separate components, and both
+                // publish BulletSPI. Taking the first provider would be a
+                // coin toss, so every provider is offered the shot and the
+                // one that recognises this shooter answers; the others
+                // return empty. If the player's weapon component is absent
+                // or deleted, nothing answers and no bullet is made.
+                for (BulletSPI spi : getBulletSPIs()) {
+                    java.util.Optional<Entity> created = spi.createBullet(player, gameData);
+                    if (created.isPresent()) {
+                        world.addEntity(created.get());
+                        break;
+                    }
+                }
                 shootCooldownFramesRemaining = SHOOT_COOLDOWN_FRAMES;
             }
 

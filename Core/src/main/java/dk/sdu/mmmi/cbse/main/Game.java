@@ -11,6 +11,7 @@ import dk.sdu.mmmi.cbse.common.data.GameKeys;
 import dk.sdu.mmmi.cbse.common.data.GameState;
 import dk.sdu.mmmi.cbse.common.data.GameStateManager;
 import dk.sdu.mmmi.cbse.common.data.PlayerState;
+import dk.sdu.mmmi.cbse.common.data.RuntimeObjectCategory;
 import dk.sdu.mmmi.cbse.common.data.World;
 import dk.sdu.mmmi.cbse.common.services.IEntityProcessingService;
 import dk.sdu.mmmi.cbse.common.services.IGamePluginService;
@@ -71,6 +72,10 @@ class Game {
     // socket thread, drained by the game loop at the top of a frame - see
     // drainPluginCommands().
     private final Queue<PluginCommandServer.PendingCommand> pluginCommands = new ConcurrentLinkedQueue<>();
+
+    // Work handed in by background threads (currently the plugins/ folder
+    // watcher) to be run on the game thread at the top of a frame.
+    private final Queue<Runnable> gameThreadActions = new ConcurrentLinkedQueue<>();
 
     Game(List<IGamePluginService> gamePluginServices, List<IEntityProcessingService> entityProcessingServiceList, List<IPostEntityProcessingService> postEntityProcessingServices, ScoreClient scoreClient) {
         this.scoreClient = scoreClient;
@@ -214,6 +219,13 @@ class Game {
         // script. Purely additive: if it cannot bind, start() logs and the
         // game runs exactly as it always has.
         PluginCommandServer.start(PluginCommandServer.DEFAULT_PORT, pluginCommands);
+
+        // Deleting a plugin jar takes that plugin out of the running game.
+        // Restoring is never automatic - see PluginFolderWatcher.
+        PluginFolderWatcher.start(gameThreadActions, moduleName -> {
+            System.out.println("[plugin] " + moduleName + ": jar removed from plugins/ - unloading");
+            componentRegistry.unload(moduleName, gameData, world);
+        });
     }
 
     public void render() {
@@ -225,6 +237,7 @@ class Game {
                 // Runs before anything else in the frame, so a plugin is
                 // always installed or removed between two updates rather
                 // than in the middle of one.
+                drainGameThreadActions();
                 drainPluginCommands();
 
                 if (gameData.getKeys().isPressed(GameKeys.MUTE)) {
@@ -284,6 +297,23 @@ class Game {
      * it and logged - it never escapes into the animation timer, because a
      * throwing {@code handle()} would stop the timer and freeze the game.
      */
+    /**
+     * Runs work parked by background threads. Each action is isolated, so one
+     * that fails is logged and the rest of the frame carries on - an
+     * exception escaping here would stop the animation timer and freeze the
+     * game.
+     */
+    private void drainGameThreadActions() {
+        Runnable action;
+        while ((action = gameThreadActions.poll()) != null) {
+            try {
+                action.run();
+            } catch (RuntimeException e) {
+                System.err.println("[plugin] background action failed: " + e);
+            }
+        }
+    }
+
     private void drainPluginCommands() {
         PluginCommandServer.PendingCommand command;
         while ((command = pluginCommands.poll()) != null) {
@@ -353,6 +383,13 @@ class Game {
         if (index < words.length && words[index].equalsIgnoreCase("game")) {
             index++;
         }
+        // Two command families: "plugin" manages whole components (their
+        // classes are loaded and unloaded), "object" manages the runtime
+        // object categories inside them (enemies, enemy bullets, player
+        // bullets, asteroids) without touching any class.
+        if (index < words.length && words[index].equalsIgnoreCase("object")) {
+            return executeObjectCommand(words, index + 1);
+        }
         if (index < words.length && words[index].equalsIgnoreCase("plugin")) {
             index++;
         }
@@ -394,6 +431,101 @@ class Game {
             default:
                 return "unknown action '" + action + "'. " + PLUGIN_USAGE;
         }
+    }
+
+    private static final String OBJECT_USAGE =
+            "usage: object <list|delete|restore> [Enemy|EnemyBullets|PlayerBullets|Asteroids]";
+
+    /**
+     * Runtime lifecycle control for the four object categories.
+     *
+     * <p>{@code delete} does two distinct things, and both are necessary:
+     * it clears the entities of that category that are on the field right
+     * now, and it marks the category inactive so its producer stops creating
+     * new ones. Clearing alone would be pointless - an enemy would simply
+     * fire again on its next cooldown.
+     *
+     * <p>Runs on the game thread at the top of a frame, so entities are never
+     * removed while a processor is midway through iterating them.
+     */
+    private String executeObjectCommand(String[] words, int index) {
+        if (index >= words.length) {
+            return OBJECT_USAGE;
+        }
+        String action = words[index++].toLowerCase();
+
+        if (action.equals("list") || action.equals("status")) {
+            return describeObjectCategories();
+        }
+        if (action.equals("help")) {
+            return OBJECT_USAGE;
+        }
+        if (index >= words.length) {
+            return "'" + action + "' needs a category name. " + OBJECT_USAGE;
+        }
+
+        String name = words[index];
+        RuntimeObjectCategory category = RuntimeObjectCategory.fromName(name);
+        if (category == null) {
+            return "unknown object category '" + name + "'. " + OBJECT_USAGE;
+        }
+
+        switch (action) {
+            case "delete":
+            case "disable":
+            case "deactivate": {
+                gameData.getRuntimeObjectState().setActive(category, false);
+                int removed = removeEntitiesOf(category);
+                return category.getDisplayName() + " deleted - " + removed
+                        + " removed from the field, and no new ones will be created"
+                        + System.lineSeparator();
+            }
+            case "restore":
+            case "enable":
+            case "activate": {
+                gameData.getRuntimeObjectState().setActive(category, true);
+                return category.getDisplayName() + " restored - new ones can be created again"
+                        + System.lineSeparator();
+            }
+            default:
+                return "unknown action '" + action + "'. " + OBJECT_USAGE;
+        }
+    }
+
+    /**
+     * Removes every entity of a category from the world. Iterates a snapshot,
+     * and {@code World} is backed by a concurrent map, so this cannot disturb
+     * a collection anyone else is reading. The renderer drops the matching
+     * polygons on the next frame by its existing rule that a polygon whose
+     * entity has left the world is removed.
+     */
+    private int removeEntitiesOf(RuntimeObjectCategory category) {
+        int removed = 0;
+        for (Entity entity : new java.util.ArrayList<>(world.getEntities())) {
+            if (entity.getCategory() == category.getEntityCategory()) {
+                world.removeEntity(entity);
+                removed++;
+            }
+        }
+        return removed;
+    }
+
+    private String describeObjectCategories() {
+        StringBuilder out = new StringBuilder();
+        out.append(String.format("%-15s %-10s %s%n", "CATEGORY", "STATE", "ON FIELD"));
+        for (RuntimeObjectCategory category : RuntimeObjectCategory.values()) {
+            int count = 0;
+            for (Entity entity : world.getEntities()) {
+                if (entity.getCategory() == category.getEntityCategory()) {
+                    count++;
+                }
+            }
+            out.append(String.format("%-15s %-10s %d%n",
+                    category.getDisplayName(),
+                    gameData.getRuntimeObjectState().isActive(category) ? "ACTIVE" : "INACTIVE",
+                    count));
+        }
+        return out.toString();
     }
 
     private void handleStateTransitions(GameStateManager stateManager) {
